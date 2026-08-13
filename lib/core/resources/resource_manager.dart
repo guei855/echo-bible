@@ -232,10 +232,10 @@ class ResourceManager {
       language: ResourceLanguage.fr,
       category: ResourceCategory.nave,
       description: 'Traductions françaises sans dupliquer les références.',
-      version: '1',
-      sizeBytes: 20480,
+      version: '2',
+      sizeBytes: 360448,
       sha256:
-          'f34cc63f7935dadcc1cd95b7ce3f77ef2ea2179d0568231a5fd79c9b115de97d',
+          '07603385720b79f5b0c8d48053fe7aa22e95cda973cf69f584c8bc0621ba3188',
       downloadUrl:
           _releaseBase == '' ? null : '$_releaseBase/fr/nave/nave_fr.db',
       license: 'CC BY-SA 4.0 (couche de traduction française)',

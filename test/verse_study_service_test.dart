@@ -29,7 +29,8 @@ void main() {
     expect(study.strongWords.map((word) => word.code), contains('H7225'));
     expect(study.strongWords.first.inferredLanguage, 'Hébreu');
     expect(study.strongWords.first.word, isNot('Au'));
-    expect(study.crossReferences, isNotEmpty);
+    // Les références sont chargées paresseusement à l’ouverture de leur onglet.
+    expect(study.crossReferences, isEmpty);
 
     final occurrences = await VerseStudyService.loadOccurrences('H7225');
     expect(occurrences, isNotEmpty);
@@ -58,7 +59,7 @@ void main() {
       ),
       isTrue,
     );
-    expect(genesisStudy.crossReferences, isNotEmpty);
+    expect(genesisStudy.crossReferences, isEmpty);
 
     final h3588Occurrences = await VerseStudyService.loadOccurrences('H3588');
     expect(

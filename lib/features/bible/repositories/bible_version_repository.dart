@@ -131,6 +131,40 @@ class BibleVersionRepository {
         );
   }
 
+  /// Loads several target ranges through one database connection. This keeps
+  /// study modules from opening a Bible database once per displayed card.
+  static Future<List<Map<String, Object?>>> getVersesForRanges({
+    required int versionId,
+    required Iterable<(int, int, int, int)> ranges,
+  }) async {
+    final uniqueRanges = ranges.toSet().toList(growable: false);
+    if (uniqueRanges.isEmpty) return const [];
+    final module = await _databaseForVersion(versionId);
+    if (module == null) return const [];
+    try {
+      final clauses = List.filled(
+        uniqueRanges.length,
+        '(book_id=? AND chapter_number=? AND verse_number BETWEEN ? AND ?)',
+      ).join(' OR ');
+      return module.rawQuery('''
+        SELECT id,book_id,chapter_number,verse_number,text,
+          0 AS uses_default_text
+        FROM verses
+        WHERE $clauses
+        ORDER BY book_id,chapter_number,verse_number
+      ''', [
+        for (final range in uniqueRanges) ...[
+          range.$1,
+          range.$2,
+          range.$3,
+          range.$4,
+        ],
+      ]);
+    } finally {
+      if (versionId >= _moduleIdBase) await module.close();
+    }
+  }
+
   static Future<List<BibleBook>> getBooks({int? versionId}) async {
     final selected = versionId ?? (await getActiveVersion()).id;
     final module = await _databaseForVersion(selected);

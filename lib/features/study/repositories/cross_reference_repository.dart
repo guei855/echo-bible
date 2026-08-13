@@ -4,67 +4,135 @@ import 'package:echo_bible/features/study/models/cross_reference.dart';
 import 'package:echo_bible/features/study/services/cross_reference_database_service.dart';
 
 class CrossReferenceRepository {
+  static const lsgVersionId = 1;
+
   const CrossReferenceRepository();
 
   Future<List<CrossReference>> forVerse(
     int book,
     int chapter,
     int verse, {
-    int limit = 100,
+    int limit = 20,
     int? versionId,
   }) async {
-    final crossDb = await CrossReferenceDatabaseService.database;
-    final links = await crossDb.query('cross_references',
-        where: 'source_book_id=? AND source_chapter=? AND source_verse=?',
-        whereArgs: [book, chapter, verse],
-        orderBy: 'score DESC',
-        limit: limit);
+    final links =
+        await CrossReferenceDatabaseService.use((database) => database.query(
+              'cross_references',
+              where: 'source_book_id=? AND source_chapter=? AND source_verse=?',
+              whereArgs: [book, chapter, verse],
+              orderBy: 'score DESC,id ASC',
+              limit: limit,
+            ));
     if (links.isEmpty) return const [];
-    final bibleDb = await DatabaseService.database;
+
     final selectedVersionId = versionId ?? await _selectedVersionId();
+    final ranges = links.map((link) {
+      final start = link['target_verse_start']! as int;
+      return (
+        link['target_book_id']! as int,
+        link['target_chapter']! as int,
+        start,
+        link['target_verse_end'] as int? ?? start,
+      );
+    }).toList(growable: false);
+    final selectedRows = await BibleVersionRepository.getVersesForRanges(
+      versionId: selectedVersionId,
+      ranges: ranges,
+    );
+    final fallbackRows = selectedVersionId == lsgVersionId
+        ? selectedRows
+        : await BibleVersionRepository.getVersesForRanges(
+            versionId: lsgVersionId,
+            ranges: ranges,
+          );
+    final selectedVerses = _verseMap(selectedRows);
+    final fallbackVerses = _verseMap(fallbackRows);
+
+    final bibleDb = await DatabaseService.database;
+    final bookIds = links
+        .map((link) => link['target_book_id']! as int)
+        .toSet()
+        .toList(growable: false);
+    final placeholders = List.filled(bookIds.length, '?').join(',');
+    final bookRows = await bibleDb.rawQuery(
+      'SELECT id,name,chapters_count FROM books WHERE id IN ($placeholders)',
+      bookIds,
+    );
+    final books = {for (final row in bookRows) row['id']! as int: row};
+
     final result = <CrossReference>[];
     for (final link in links) {
-      final rows = await bibleDb.rawQuery('''
-        SELECT v.book_id,b.name book_name,b.chapters_count,v.chapter_number,
-          v.verse_number,COALESCE(vt.text,v.text) AS text
-        FROM verses v
-        JOIN books b ON b.id=v.book_id
-        LEFT JOIN verse_translations vt
-          ON vt.verse_id=v.id AND vt.version_id=?
-        WHERE v.book_id=? AND v.chapter_number=?
-          AND v.verse_number BETWEEN ? AND ?
-        ORDER BY v.verse_number
-      ''', [
-        selectedVersionId,
-        link['target_book_id'],
-        link['target_chapter'],
-        link['target_verse_start'],
-        link['target_verse_end'],
-      ]);
-      if (rows.isEmpty) continue;
-      final row = rows.first;
+      final bookId = link['target_book_id']! as int;
+      final targetChapter = link['target_chapter']! as int;
+      final verseStart = link['target_verse_start']! as int;
+      final verseEnd = link['target_verse_end'] as int? ?? verseStart;
+      final texts = <String>[];
+      var usedFallback = false;
+      for (var number = verseStart; number <= verseEnd; number++) {
+        final key = '$bookId:$targetChapter:$number';
+        final selectedText = selectedVerses[key];
+        final fallbackText = fallbackVerses[key];
+        if (selectedText != null) {
+          texts.add(selectedText);
+        } else if (fallbackText != null) {
+          texts.add(fallbackText);
+          usedFallback = selectedVersionId != lsgVersionId;
+        }
+      }
+      if (texts.isEmpty || books[bookId] == null) continue;
+      final bookRow = books[bookId]!;
       result.add(CrossReference(
-          bookId: row['book_id'] as int,
-          bookName: row['book_name'] as String,
-          chaptersCount: row['chapters_count'] as int,
-          chapter: row['chapter_number'] as int,
-          verseStart: link['target_verse_start'] as int,
-          verseEnd: link['target_verse_end'] as int,
-          text: rows.map((verse) => verse['text'] as String).join(' '),
-          score: link['score'] as int?));
+        bookId: bookId,
+        bookName: bookRow['name']! as String,
+        chaptersCount: bookRow['chapters_count']! as int,
+        chapter: targetChapter,
+        verseStart: verseStart,
+        verseEnd: verseEnd,
+        text: texts.join(' '),
+        score: link['score'] as int?,
+        sourceDataset: link['source_dataset']! as String,
+        requestedVersionId: selectedVersionId,
+        usedLsgFallback: usedFallback,
+      ));
     }
     return result;
   }
 
-  Future<int?> _selectedVersionId() async {
+  Future<int> countForVerse(int book, int chapter, int verse) =>
+      CrossReferenceDatabaseService.use(
+          (database) async => (await database.rawQuery('''
+            SELECT COUNT(*) total FROM cross_references
+            WHERE source_book_id=? AND source_chapter=? AND source_verse=?
+          ''', [book, chapter, verse])).first['total']! as int);
+
+  Future<List<Map<String, Object?>>> findReferencesToVerse(
+    int book,
+    int chapter,
+    int verse, {
+    int limit = 20,
+  }) =>
+      CrossReferenceDatabaseService.use((database) => database.query(
+            'cross_references',
+            where: '''target_book_id=? AND target_chapter=?
+              AND ? BETWEEN target_verse_start AND target_verse_end''',
+            whereArgs: [book, chapter, verse],
+            orderBy: 'score DESC,id ASC',
+            limit: limit,
+          ));
+
+  Future<int> count() => CrossReferenceDatabaseService.use((database) async =>
+      (await database.rawQuery('SELECT COUNT(*) total FROM cross_references'))
+          .first['total']! as int);
+
+  Future<int> _selectedVersionId() async {
     final versions = await BibleVersionRepository.getInstalledVersions();
-    if (versions.isEmpty) return null;
+    if (versions.isEmpty) return lsgVersionId;
     return BibleVersionRepository.getSelectedVersionId(versions);
   }
 
-  Future<int> count() async {
-    final db = await CrossReferenceDatabaseService.database;
-    return (await db.rawQuery('SELECT COUNT(*) total FROM cross_references'))
-        .first['total'] as int;
-  }
+  Map<String, String> _verseMap(List<Map<String, Object?>> rows) => {
+        for (final row in rows)
+          '${row['book_id']}:${row['chapter_number']}:${row['verse_number']}':
+              row['text']! as String,
+      };
 }

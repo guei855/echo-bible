@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-13T11:13:20.403813Z",
+  "generatedAt": "2026-08-13T22:37:55.906473Z",
   "resources": [
     {
       "id": "ostervald",
@@ -57,6 +57,24 @@
       "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.0.0-resources/neo_crampon.db"
     },
     {
+      "id": "dictionary",
+      "language": "fr",
+      "category": "dictionary",
+      "name": "Dictionnaire biblique français",
+      "shortName": "Vigouroux",
+      "version": "1.0.0",
+      "sizeBytes": 9015296,
+      "sha256": "154b6617bbf5f52323952a79da09dc88a484de0170407818f7f8d5fdc6231928",
+      "localFileName": "vigouroux_dictionary.db",
+      "releasePath": "fr/dictionaries/vigouroux_dictionary.db",
+      "source": "Dictionnaire de la Bible — F. Vigouroux / Wikisource / Gallica",
+      "attribution": "Dictionnaire de la Bible, sous la direction de F. Vigouroux ; transcription Wikisource et fac-similés Gallica/Wikimedia Commons",
+      "sourceUrl": "https://fr.wikisource.org/wiki/Dictionnaire_de_la_Bible",
+      "license": "Domaine public ; transcription Wikisource CC BY-SA 4.0",
+      "status": "available",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.1.0-resources/vigouroux_dictionary.db"
+    },
+    {
       "id": "strong",
       "language": "common",
       "category": "strong",
@@ -78,7 +96,9 @@
       "localFileName": "cross_references.db",
       "releasePath": "common/cross_references/cross_references.db",
       "sourceUrl": "https://www.openbible.info/labs/cross-references/",
-      "license": "CC BY 4.0"
+      "license": "CC BY 4.0",
+      "status": "available",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.2.0-resources/cross_references.db"
     },
     {
       "id": "nave",
@@ -90,37 +110,23 @@
       "localFileName": "nave_core.db",
       "releasePath": "en/nave/nave_core.db",
       "sourceUrl": "https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave",
-      "license": "Public Domain"
+      "license": "Public Domain",
+      "status": "available",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.2.0-resources/nave_core.db"
     },
     {
       "id": "naveFrench",
       "language": "fr",
       "category": "nave",
-      "version": "1",
-      "sizeBytes": 20480,
-      "sha256": "f34cc63f7935dadcc1cd95b7ce3f77ef2ea2179d0568231a5fd79c9b115de97d",
+      "version": "2",
+      "sizeBytes": 360448,
+      "sha256": "07603385720b79f5b0c8d48053fe7aa22e95cda973cf69f584c8bc0621ba3188",
       "localFileName": "nave_fr.db",
       "releasePath": "fr/nave/nave_fr.db",
       "sourceUrl": "https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave",
-      "license": "CC BY-SA 4.0 (French translation layer)"
-    },
-    {
-      "id": "dictionary",
-      "language": "fr",
-      "category": "dictionary",
-      "name": "Dictionnaire biblique français",
-      "shortName": "Vigouroux",
-      "version": "1.0.0",
-      "sizeBytes": 9015296,
-      "sha256": "154b6617bbf5f52323952a79da09dc88a484de0170407818f7f8d5fdc6231928",
-      "localFileName": "vigouroux_dictionary.db",
-      "releasePath": "fr/dictionaries/vigouroux_dictionary.db",
-      "source": "Dictionnaire de la Bible — F. Vigouroux / Wikisource / Gallica",
-      "attribution": "Dictionnaire de la Bible, sous la direction de F. Vigouroux ; transcription Wikisource et fac-similés Gallica/Wikimedia Commons",
-      "sourceUrl": "https://fr.wikisource.org/wiki/Dictionnaire_de_la_Bible",
-      "license": "Domaine public ; transcription Wikisource CC BY-SA 4.0",
+      "license": "CC BY-SA 4.0 (French translation layer)",
       "status": "available",
-      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.1.0-resources/vigouroux_dictionary.db"
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.2.0-resources/nave_fr.db"
     }
   ]
 }

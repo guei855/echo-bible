@@ -13,9 +13,20 @@ Future<void> main() async {
   final existing =
       jsonDecode(await File('resources_manifest.json').readAsString())
           as Map<String, Object?>;
-  final modules = (existing['resources'] as List)
+  const regeneratedIds = {
+    'strong',
+    'crossReferences',
+    'nave',
+    'naveFrench',
+  };
+  final existingResources = (existing['resources'] as List)
       .map((resource) => Map<String, Object?>.from(resource as Map))
-      .where((resource) => resource['category'] == 'bible')
+      .toList();
+  final previousById = {
+    for (final resource in existingResources) '${resource['id']}': resource,
+  };
+  final modules = existingResources
+      .where((resource) => !regeneratedIds.contains(resource['id']))
       .toList();
 
   await _copyModule(
@@ -41,6 +52,19 @@ Future<void> main() async {
     modules: modules,
   );
   await _splitNaveModules(File('assets/database/nave.db'), modules);
+
+  for (final module in modules) {
+    final previous = previousById['${module['id']}'];
+    final sameArtifact = previous != null &&
+        previous['version'] == module['version'] &&
+        previous['sizeBytes'] == module['sizeBytes'] &&
+        previous['sha256'] == module['sha256'] &&
+        previous['localFileName'] == module['localFileName'];
+    if (sameArtifact && previous['status'] == 'available') {
+      module['status'] = 'available';
+      module['downloadUrl'] = previous['downloadUrl'];
+    }
+  }
 
   final manifest = const JsonEncoder.withIndent('  ').convert({
     'schemaVersion': 1,
@@ -87,53 +111,122 @@ Future<void> _splitNaveModules(
   try {
     await frenchDb.execute('''CREATE TABLE nave_translations(
       entity_type TEXT NOT NULL,entity_id INTEGER NOT NULL,
-      translated_text TEXT NOT NULL,translation_status TEXT NOT NULL,
-      translation_source TEXT NOT NULL,
-      PRIMARY KEY(entity_type,entity_id))''');
+      language_code TEXT NOT NULL,translated_text TEXT NOT NULL,
+      normalized_text TEXT NOT NULL,status TEXT NOT NULL,source TEXT NOT NULL,
+      notes TEXT,
+      PRIMARY KEY(entity_type,entity_id,language_code))''');
+    await frenchDb.execute('''CREATE TABLE nave_aliases(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,topic_id INTEGER NOT NULL,
+      language_code TEXT NOT NULL,alias_text TEXT NOT NULL,
+      normalized_alias TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,
+      UNIQUE(topic_id,language_code,normalized_alias))''');
+    await frenchDb.execute(
+        'CREATE INDEX idx_nave_translation_search ON nave_translations(language_code,entity_type,normalized_text)');
+    await frenchDb.execute(
+        'CREATE INDEX idx_nave_alias_search ON nave_aliases(language_code,normalized_alias)');
     await frenchDb.execute(
         'CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL)');
-    final translations = await sourceDb.query(
-      'nave_translations',
-      where: "language='fr' AND translation_status<>'pending'",
-    );
-    final reviewed = <String, Map<String, Object?>>{
-      for (final row in translations)
-        '${row['entity_type']}:${row['entity_id']}': row,
-    };
-    final reviewFile = File('bible_builder/translations/nave_fr_review.csv');
-    if (await reviewFile.exists()) {
-      final lines = await reviewFile.readAsLines();
-      for (final line in lines.skip(1)) {
-        if (line.trim().isEmpty) continue;
-        final fields = _parseCsvLine(line);
-        if (fields.length < 5 ||
-            fields[3].trim().isEmpty ||
-            fields[4].trim() == 'pending') {
-          continue;
-        }
-        reviewed['${fields[0]}:${fields[1]}'] = {
-          'entity_type': fields[0],
-          'entity_id': int.parse(fields[1]),
-          'translated_text': fields[3],
-          'translation_status': fields[4],
-          'translation_source': 'ECHO BIBLE reviewed translation layer',
-        };
+    final editorial = jsonDecode(await File(
+      'bible_builder/translations/nave_fr_editorial.json',
+    ).readAsString()) as Map<String, Object?>;
+    final language = editorial['languageCode']! as String;
+    final source = editorial['source']! as String;
+    final status = editorial['status']! as String;
+    final notes = editorial['notes'] as String?;
+    final translations = <Map<String, Object?>>[];
+    final aliases = <Map<String, Object?>>[];
+    final aliasKeys = <String>{};
+
+    for (final value in editorial['topics']! as List<Object?>) {
+      final topic = Map<String, Object?>.from(value! as Map);
+      final titleEn = topic['titleEn']! as String;
+      final occurrence = topic['occurrence'] as int? ?? 1;
+      final matches = await sourceDb.query(
+        'nave_topics',
+        columns: ['id'],
+        where: 'title_en=?',
+        whereArgs: [titleEn],
+        orderBy: 'id',
+      );
+      if (matches.length < occurrence) {
+        throw StateError('Sujet Nave introuvable : $titleEn #$occurrence');
+      }
+      final topicId = matches[occurrence - 1]['id']! as int;
+      final translatedText = topic['text']! as String;
+      translations.add({
+        'entity_type': 'topic',
+        'entity_id': topicId,
+        'language_code': language,
+        'translated_text': translatedText,
+        'normalized_text': _normalizeSearchText(translatedText),
+        'status': status,
+        'source': source,
+        'notes': notes,
+      });
+      for (final alias in topic['aliases'] as List<Object?>? ?? const []) {
+        final normalizedAlias = _normalizeSearchText(alias! as String);
+        if (!aliasKeys.add('$topicId:$normalizedAlias')) continue;
+        aliases.add({
+          'topic_id': topicId,
+          'language_code': language,
+          'alias_text': alias,
+          'normalized_alias': normalizedAlias,
+          'source': source,
+          'status': status,
+        });
+      }
+    }
+
+    for (final value in editorial['sections']! as List<Object?>) {
+      final section = Map<String, Object?>.from(value! as Map);
+      final sourceEn = section['sourceEn']! as String;
+      final matches = await sourceDb.query(
+        'nave_sections',
+        columns: ['id'],
+        where: 'title_en=?',
+        whereArgs: [sourceEn],
+      );
+      if (matches.isEmpty) {
+        throw StateError('Section Nave introuvable : $sourceEn');
+      }
+      final translatedText = section['text']! as String;
+      for (final match in matches) {
+        translations.add({
+          'entity_type': 'section',
+          'entity_id': match['id']! as int,
+          'language_code': language,
+          'translated_text': translatedText,
+          'normalized_text': _normalizeSearchText(translatedText),
+          'status': status,
+          'source': source,
+          'notes': notes,
+        });
       }
     }
     await frenchDb.transaction((transaction) async {
       final batch = transaction.batch();
-      for (final row in reviewed.values) {
-        batch.insert('nave_translations', {
-          'entity_type': row['entity_type'],
-          'entity_id': row['entity_id'],
-          'translated_text': row['translated_text'],
-          'translation_status': row['translation_status'],
-          'translation_source': row['translation_source'],
-        });
+      for (final row in translations) {
+        batch.insert('nave_translations', row);
       }
-      batch.insert('metadata', {'key': 'language', 'value': 'fr'});
-      batch.insert('metadata', {'key': 'version', 'value': '1'});
+      for (final row in aliases) {
+        batch.insert('nave_aliases', row);
+      }
+      batch.insert('metadata', {'key': 'language', 'value': language});
+      batch.insert('metadata', {'key': 'version', 'value': '2'});
       batch.insert('metadata', {'key': 'license', 'value': 'CC BY-SA 4.0'});
+      batch.insert('metadata', {'key': 'source', 'value': source});
+      batch.insert('metadata', {
+        'key': 'topic_translations',
+        'value':
+            '${translations.where((row) => row['entity_type'] == 'topic').length}',
+      });
+      batch.insert('metadata', {
+        'key': 'section_translations',
+        'value':
+            '${translations.where((row) => row['entity_type'] == 'section').length}',
+      });
+      batch
+          .insert('metadata', {'key': 'aliases', 'value': '${aliases.length}'});
       await batch.commit(noResult: true);
     });
   } finally {
@@ -145,34 +238,42 @@ Future<void> _splitNaveModules(
     id: 'naveFrench',
     language: 'fr',
     category: 'nave',
-    version: '1',
+    version: '2',
     sourceUrl: 'https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave',
     license: 'CC BY-SA 4.0 (French translation layer)',
   ));
 }
 
-List<String> _parseCsvLine(String line) {
-  final fields = <String>[];
-  final buffer = StringBuffer();
-  var quoted = false;
-  for (var index = 0; index < line.length; index++) {
-    final character = line[index];
-    if (character == '"') {
-      if (quoted && index + 1 < line.length && line[index + 1] == '"') {
-        buffer.write('"');
-        index++;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (character == ',' && !quoted) {
-      fields.add(buffer.toString());
-      buffer.clear();
-    } else {
-      buffer.write(character);
-    }
-  }
-  fields.add(buffer.toString());
-  return fields;
+String _normalizeSearchText(String value) {
+  const replacements = {
+    'à': 'a',
+    'â': 'a',
+    'ä': 'a',
+    'á': 'a',
+    'ç': 'c',
+    'é': 'e',
+    'è': 'e',
+    'ê': 'e',
+    'ë': 'e',
+    'î': 'i',
+    'ï': 'i',
+    'í': 'i',
+    'ô': 'o',
+    'ö': 'o',
+    'ó': 'o',
+    'œ': 'oe',
+    'ù': 'u',
+    'û': 'u',
+    'ü': 'u',
+    'ú': 'u',
+    'ÿ': 'y',
+  };
+  var normalized = value.toLowerCase();
+  replacements.forEach(
+    (character, replacement) =>
+        normalized = normalized.replaceAll(character, replacement),
+  );
+  return normalized.replaceAll(RegExp('[^a-z0-9]+'), ' ').trim();
 }
 
 Future<void> _copyModule(

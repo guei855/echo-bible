@@ -90,14 +90,28 @@ void main() {
             where:
                 'source_book_id=43 AND source_chapter=3 AND source_verse=16'),
         isNotEmpty);
+    final queryPlan = await cross.rawQuery('''
+      EXPLAIN QUERY PLAN
+      SELECT * FROM cross_references
+      WHERE source_book_id=43 AND source_chapter=3 AND source_verse=16
+      ORDER BY score DESC LIMIT 20
+    ''');
+    expect(
+      queryPlan.map((row) => '${row['detail']}').join(' '),
+      contains('idx_cross_source'),
+    );
     final crossColumns = await cross.rawQuery(
       'PRAGMA table_info(cross_references)',
     );
     expect(
       crossColumns.map((column) => column['name']),
       containsAll([
+        'id',
         'source_book_id',
+        'source_chapter',
+        'source_verse',
         'target_book_id',
+        'target_chapter',
         'target_verse_start',
         'target_verse_end',
         'score',
@@ -119,7 +133,28 @@ void main() {
     await nave.close();
 
     final naveFrench = await openModule('fr/nave/nave_fr.db');
-    expect(await naveFrench.query('nave_translations'), isNotEmpty);
+    expect(
+      Sqflite.firstIntValue(await naveFrench.rawQuery(
+        "SELECT COUNT(*) FROM nave_translations WHERE entity_type='topic'",
+      )),
+      54,
+    );
+    expect(
+      Sqflite.firstIntValue(await naveFrench.rawQuery(
+        "SELECT COUNT(*) FROM nave_translations WHERE entity_type='section'",
+      )),
+      1018,
+    );
+    expect(
+      Sqflite.firstIntValue(
+        await naveFrench.rawQuery('SELECT COUNT(*) FROM nave_aliases'),
+      ),
+      29,
+    );
+    expect(
+      await naveFrench.rawQuery('PRAGMA integrity_check'),
+      [containsValue('ok')],
+    );
     await naveFrench.close();
   });
 }

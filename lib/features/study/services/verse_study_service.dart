@@ -1,8 +1,6 @@
 import 'package:echo_bible/core/services/database_service.dart';
-import 'package:echo_bible/features/study/models/cross_reference.dart';
 import 'package:echo_bible/features/study/models/strong_entry.dart';
 import 'package:echo_bible/features/study/models/verse_study_data.dart';
-import 'package:echo_bible/features/study/repositories/cross_reference_repository.dart';
 import 'package:echo_bible/features/study/repositories/strong_repository.dart';
 
 class VerseStudyService {
@@ -61,22 +59,10 @@ class VerseStudyService {
       );
     }
 
-    var references = const <CrossReference>[];
-    if (verseRows.isNotEmpty) {
-      try {
-        references = await const CrossReferenceRepository().forVerse(
-          verseRows.first['book_id'] as int,
-          verseRows.first['chapter_number'] as int,
-          verseRows.first['verse_number'] as int,
-        );
-      } catch (_) {
-        // Optional module not installed.
-      }
-    }
-
     return VerseStudyData(
       strongWords: words,
-      crossReferences: references,
+      // Cross references are loaded only when their study tab is selected.
+      crossReferences: const [],
     );
   }
 

@@ -104,6 +104,78 @@ void main() {
     }
   });
 
+  test('installe, supprime et réinstalle les modules d’étude', () async {
+    final directory = await Directory.systemTemp.createTemp('echo-nave-');
+    addTearDown(() => directory.delete(recursive: true));
+    final manager = ResourceManager(rootDirectory: directory);
+    const modules = {
+      OfflineResourceId.nave: 'en/nave/nave_core.db',
+      OfflineResourceId.naveFrench: 'fr/nave/nave_fr.db',
+      OfflineResourceId.crossReferences:
+          'common/cross_references/cross_references.db',
+    };
+    for (final entry in modules.entries) {
+      final source = File('release_resources/${entry.value}');
+      await manager.installFromFile(entry.key, source);
+      expect(await manager.state(entry.key), OfflineResourceState.installed);
+      await manager.remove(entry.key);
+      final installed =
+          await manager.installedFile(manager.descriptor(entry.key));
+      expect(await installed.exists(), isFalse);
+      await manager.installFromFile(entry.key, source);
+      expect(await manager.state(entry.key), OfflineResourceState.installed);
+    }
+  });
+
+  test('télécharge réellement les modules d’étude puis reste offline',
+      () async {
+    final sources = <OfflineResourceId, File>{
+      OfflineResourceId.nave: File('release_resources/en/nave/nave_core.db'),
+      OfflineResourceId.naveFrench:
+          File('release_resources/fr/nave/nave_fr.db'),
+      OfflineResourceId.crossReferences: File(
+        'release_resources/common/cross_references/cross_references.db',
+      ),
+    };
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      final fileName = request.uri.pathSegments.last;
+      final id = sources.keys.firstWhere(
+        (candidate) =>
+            const ResourceManager().descriptor(candidate).localFileName ==
+            fileName,
+      );
+      final source = sources[id]!;
+      request.response.contentLength = await source.length();
+      await request.response.addStream(source.openRead());
+      await request.response.close();
+    });
+    final directory = await Directory.systemTemp.createTemp('echo-nave-http-');
+    addTearDown(() => directory.delete(recursive: true));
+    final defaults = const ResourceManager();
+    final manager = ResourceManager(
+      rootDirectory: directory,
+      resourceOverrides: {
+        for (final id in sources.keys)
+          id: _withUrl(
+            defaults.descriptor(id),
+            'http://${server.address.address}:${server.port}/'
+            '${defaults.descriptor(id).localFileName}',
+          ),
+      },
+    );
+    for (final id in sources.keys) {
+      await _withRealHttp(() => manager.download(id));
+      expect(await manager.state(id), OfflineResourceState.installed);
+    }
+    await server.close(force: true);
+    for (final id in sources.keys) {
+      final installed = await manager.installedFile(manager.descriptor(id));
+      await ResourceManager.validateSqliteFile(installed.path);
+    }
+  });
+
   test('refuse un checksum invalide sans remplacer le module', () async {
     final directory = await Directory.systemTemp.createTemp('echo-checksum-');
     addTearDown(() => directory.delete(recursive: true));

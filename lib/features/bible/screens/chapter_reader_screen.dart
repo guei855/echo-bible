@@ -32,6 +32,7 @@ class ChapterReaderScreen extends StatefulWidget {
   final BibleBook book;
   final int initialChapter;
   final int? initialVerse;
+  final int? initialVersionId;
   final List<Map<String, dynamic>>? initialVerses;
 
   const ChapterReaderScreen({
@@ -39,6 +40,7 @@ class ChapterReaderScreen extends StatefulWidget {
     required this.book,
     this.initialChapter = 1,
     this.initialVerse,
+    this.initialVersionId,
     this.initialVerses,
   });
 
@@ -129,7 +131,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
       final savedId =
           await BibleVersionRepository.getSelectedVersionId(versions);
       if (!mounted) return;
-      final tabVersionId =
+      final tabVersionId = widget.initialVersionId ??
           ReaderHostBindings.maybeRead(context)?.initialVersionId;
       final selectedId = versions.any(
         (version) => version.id == tabVersionId,

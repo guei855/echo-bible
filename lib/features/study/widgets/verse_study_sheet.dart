@@ -1,4 +1,5 @@
 import 'package:echo_bible/core/theme/app_colors.dart';
+import 'package:echo_bible/core/database/bundled_database.dart';
 import 'package:echo_bible/core/resources/resource_descriptor.dart';
 import 'package:echo_bible/core/resources/resource_manager.dart';
 import 'package:echo_bible/features/bible/models/bible_book.dart';
@@ -6,10 +7,14 @@ import 'package:echo_bible/features/bible/screens/chapter_reader_screen.dart';
 import 'package:echo_bible/features/bible/screens/parallel_comparison_screen.dart';
 import 'package:echo_bible/features/dictionary/data/repository/dictionary_repository.dart';
 import 'package:echo_bible/features/dictionary/screens/dictionary_screen.dart';
+import 'package:echo_bible/features/settings/screens/download_manager_screen.dart';
+import 'package:echo_bible/features/study/models/cross_reference.dart';
 import 'package:echo_bible/features/study/models/nave_topic.dart';
 import 'package:echo_bible/features/study/models/verse_study_data.dart';
+import 'package:echo_bible/features/study/repositories/cross_reference_repository.dart';
 import 'package:echo_bible/features/study/repositories/nave_repository.dart';
 import 'package:echo_bible/features/study/screens/commentary_screen.dart';
+import 'package:echo_bible/features/study/screens/cross_references_screen.dart';
 import 'package:echo_bible/features/study/screens/nave_topics_screen.dart';
 import 'package:echo_bible/features/study/screens/strong_word_screen.dart';
 import 'package:echo_bible/features/search/screens/concordance_screen.dart';
@@ -293,7 +298,12 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
             chapter: widget.chapter,
             verse: _verse.verseNumber,
           ),
-        VerseStudyTool.references => _ReferencesPanel(study: _study),
+        VerseStudyTool.references => _ReferencesPanel(
+            book: widget.book,
+            chapter: widget.chapter,
+            verse: _verse.verseNumber,
+            versionId: widget.versionId,
+          ),
         VerseStudyTool.commentaries => _CommentaryPanel(
             bookId: widget.book.id,
             chapter: widget.chapter,
@@ -478,9 +488,25 @@ class _TopicsPanel extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return const EmptyResourceState(
-              icon: Icons.error_outline,
-              message: 'Impossible de charger les thèmes de Nave.',
+            final missing = snapshot.error is ResourceNotInstalledException;
+            return EmptyResourceState(
+              icon: missing
+                  ? Icons.download_for_offline_outlined
+                  : Icons.error_outline,
+              message: missing
+                  ? 'Nave n’est pas installé.'
+                  : 'Impossible de charger les thèmes de Nave.',
+              actionLabel: missing ? 'Télécharger' : null,
+              onAction: missing
+                  ? () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DownloadManagerScreen(
+                            initialCategory: ResourceCategory.nave,
+                          ),
+                        ),
+                      )
+                  : null,
             );
           }
           final topics = snapshot.data ?? const [];
@@ -515,35 +541,121 @@ class _TopicsPanel extends StatelessWidget {
       );
 }
 
-class _ReferencesPanel extends StatelessWidget {
-  final Future<VerseStudyData> study;
-  const _ReferencesPanel({required this.study});
+class _ReferencesPanel extends StatefulWidget {
+  final BibleBook book;
+  final int chapter;
+  final int verse;
+  final int versionId;
+
+  const _ReferencesPanel({
+    required this.book,
+    required this.chapter,
+    required this.verse,
+    required this.versionId,
+  });
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<VerseStudyData>(
-        future: study,
+  State<_ReferencesPanel> createState() => _ReferencesPanelState();
+}
+
+class _ReferencesPanelState extends State<_ReferencesPanel> {
+  late Future<List<CrossReference>> _references;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _reload() {
+    _references = const CrossReferenceRepository().forVerse(
+      widget.book.id,
+      widget.chapter,
+      widget.verse,
+      versionId: widget.versionId,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<List<CrossReference>>(
+        future: _references,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
+            if (snapshot.error is ResourceNotInstalledException) {
+              const manager = ResourceManager();
+              return ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Les références croisées ne sont pas encore installées. '
+                      'Cette ressource permet d’explorer les passages '
+                      'bibliques liés à votre verset.',
+                    ),
+                  ),
+                  ResourceInstallCard(
+                    resource: manager.descriptor(
+                      OfflineResourceId.crossReferences,
+                    ),
+                    state: OfflineResourceState.notInstalled,
+                    onDownload: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const DownloadManagerScreen(
+                            initialCategory: ResourceCategory.crossReferences,
+                          ),
+                        ),
+                      );
+                      if (!mounted) return;
+                      setState(_reload);
+                    },
+                  ),
+                ],
+              );
+            }
             return const EmptyResourceState(
               icon: Icons.error_outline,
               message: 'Impossible de charger les références croisées.',
             );
           }
-          final references = snapshot.data?.crossReferences ?? const [];
+          final references = snapshot.data ?? const [];
           if (references.isEmpty) {
             return const EmptyResourceState(
               icon: Icons.link_off,
-              message: 'Aucune référence croisée n’est indexée pour ce verset.',
+              message:
+                  'Aucune référence croisée n’a été trouvée pour ce verset.',
             );
           }
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: references.length,
+            itemCount: references.length + 1,
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, index) {
+              if (index == references.length) {
+                return Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CrossReferencesScreen(
+                          sourceBook: widget.book.id,
+                          sourceBookName: widget.book.name,
+                          sourceChapter: widget.chapter,
+                          sourceVerse: widget.verse,
+                          sourceVersionId: widget.versionId,
+                        ),
+                      ),
+                    ),
+                    child: const Text('Afficher toutes les références'),
+                  ),
+                );
+              }
               final reference = references[index];
               return ListTile(
                 leading: const Icon(Icons.account_tree_outlined),
@@ -556,9 +668,7 @@ class _ReferencesPanel extends StatelessWidget {
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
-                trailing: reference.score == null
-                    ? const Icon(Icons.chevron_right)
-                    : Chip(label: Text('${reference.score}')),
+                trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -572,6 +682,7 @@ class _ReferencesPanel extends StatelessWidget {
                       ),
                       initialChapter: reference.chapter,
                       initialVerse: reference.verseStart,
+                      initialVersionId: reference.requestedVersionId,
                     ),
                   ),
                 ),
