@@ -100,8 +100,7 @@ void main() {
           await manager.installedFile(manager.descriptor(entry.key));
       expect(await installed.exists(), isTrue);
       await manager.remove(entry.key);
-      expect(
-          await manager.state(entry.key), OfflineResourceState.readyForHosting);
+      expect(await manager.state(entry.key), OfflineResourceState.notInstalled);
     }
   });
 

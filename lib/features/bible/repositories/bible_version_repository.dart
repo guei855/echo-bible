@@ -178,9 +178,12 @@ class BibleVersionRepository {
     final installed = await manager.installedFile(descriptor);
     if (await installed.exists()) return installed;
     const isCompileTimeTest = bool.fromEnvironment('FLUTTER_TEST');
+    const disableDevelopmentFallback = bool.fromEnvironment(
+      'ECHO_BIBLE_DISABLE_DEV_RESOURCE_FALLBACK',
+    );
     final isTest = isCompileTimeTest ||
         Platform.environment['FLUTTER_TEST']?.toLowerCase() == 'true';
-    if (!isTest) return null;
+    if (!isTest || disableDevelopmentFallback) return null;
     final development = File(path.join(
       Directory.current.path,
       'release_resources',

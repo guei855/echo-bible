@@ -17,7 +17,8 @@
       "attribution": "Traduction Ostervald ; distribution eBible.org",
       "sourceUrl": "https://ebible.org/bible/details.php?all=1&id=fra_fob",
       "license": "Domaine public",
-      "status": "ready_for_hosting"
+      "status": "available",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.0.0-resources/ostervald.db"
     },
     {
       "id": "darby",
@@ -34,7 +35,8 @@
       "attribution": "Bible J.N. Darby, révision JND v2.0 ; Bibles et Publications Chrétiennes",
       "sourceUrl": "https://ebible.org/bible/details.php?all=1&id=frajnd",
       "license": "Domaine public",
-      "status": "ready_for_hosting"
+      "status": "available",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.0.0-resources/darby.db"
     },
     {
       "id": "neo_crampon",
@@ -51,7 +53,8 @@
       "attribution": "Sainte Bible néo-Crampon Libre © 2022 Fraternité de Tibériade ; adaptation ECHO BIBLE limitée au canon de 66 livres",
       "sourceUrl": "https://ebible.org/bible/details.php?id=francl",
       "license": "CC BY-SA 4.0",
-      "status": "ready_for_hosting"
+      "status": "available",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.0.0-resources/neo_crampon.db"
     },
     {
       "id": "strong",

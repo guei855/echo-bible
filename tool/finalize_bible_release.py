@@ -38,25 +38,30 @@ def verify(resource_id: str, url: str) -> None:
         content_type = response.headers.get_content_type()
         if content_type == "text/html":
             raise ValueError(f"{resource_id}: la réponse est une page HTML")
-        with tempfile.NamedTemporaryFile(suffix=".db") as output:
-            digest = hashlib.sha256()
-            received = 0
-            while chunk := response.read(1024 * 1024):
-                output.write(chunk)
-                digest.update(chunk)
-                received += len(chunk)
-            output.flush()
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as output:
+            temporary_path = Path(output.name)
+
+        try:
+            with temporary_path.open("wb") as output:
+                digest = hashlib.sha256()
+                received = 0
+                while chunk := response.read(1024 * 1024):
+                    output.write(chunk)
+                    digest.update(chunk)
+                    received += len(chunk)
             if received != size:
                 raise ValueError(f"{resource_id}: {received} octets au lieu de {size}")
             if digest.hexdigest() != expected_hash:
                 raise ValueError(f"{resource_id}: SHA-256 incorrect")
-            database = sqlite3.connect(f"file:{output.name}?mode=ro", uri=True)
+            database = sqlite3.connect(f"file:{temporary_path}?mode=ro", uri=True)
             try:
                 integrity = database.execute("PRAGMA integrity_check").fetchone()[0]
             finally:
                 database.close()
             if integrity != "ok":
                 raise ValueError(f"{resource_id}: integrity_check={integrity}")
+        finally:
+            temporary_path.unlink(missing_ok=True)
     print(f"{resource_id}: HTTP 200, {size} octets, SHA-256 et SQLite OK")
 
 
