@@ -77,6 +77,54 @@ void main() {
       ),
       greaterThan(90),
     );
+    expect(
+      Sqflite.firstIntValue(
+        await strong.rawQuery('SELECT COUNT(*) FROM french_verse_tokens'),
+      ),
+      417615,
+    );
+    expect(
+      Sqflite.firstIntValue(
+        await strong.rawQuery('SELECT COUNT(*) FROM french_token_strongs'),
+      ),
+      422771,
+    );
+    expect(
+      await strong.rawQuery('''
+        SELECT token.surface,link.strong_number
+        FROM french_verse_tokens token
+        JOIN french_token_strongs link ON link.token_id=token.id
+        WHERE token.book_id=1 AND token.chapter=1 AND token.verse=1
+          AND token.normalized_surface='commencement'
+      '''),
+      [containsPair('strong_number', 'H7225')],
+    );
+    expect(
+      await strong.rawQuery('''
+        SELECT token.surface,link.strong_number
+        FROM french_verse_tokens token
+        JOIN french_token_strongs link ON link.token_id=token.id
+        WHERE token.book_id=43 AND token.chapter=1 AND token.verse=1
+          AND token.normalized_surface='parole'
+      '''),
+      isNotEmpty,
+    );
+    final frenchPlan = await strong.rawQuery('''
+      EXPLAIN QUERY PLAN SELECT * FROM french_verse_tokens
+      WHERE normalized_surface='dieu'
+    ''');
+    expect(
+      frenchPlan.map((row) => '${row['detail']}').join(' '),
+      contains('idx_french_token_surface'),
+    );
+    final versePlan = await strong.rawQuery('''
+      EXPLAIN QUERY PLAN SELECT * FROM french_verse_tokens
+      WHERE book_id=43 AND chapter=3 AND verse=16 ORDER BY token_index
+    ''');
+    expect(
+      versePlan.map((row) => '${row['detail']}').join(' '),
+      contains('idx_french_token_reference'),
+    );
     await strong.close();
 
     final cross =

@@ -131,7 +131,10 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
 
   Future<VerseStudyData> _loadStudy() =>
       widget.loadStudy?.call(_verse.verseId) ??
-      VerseStudyService.loadVerse(_verse.verseId);
+      VerseStudyService.loadVerse(
+        _verse.verseId,
+        selectedText: widget.selectedText,
+      );
 
   void _move(int delta) {
     final next = _index + delta;
@@ -291,7 +294,10 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
         VerseStudyTool.concordance => _ConcordancePanel(
             selectedText: widget.selectedText ?? _verse.verseText,
           ),
-        VerseStudyTool.lexicon => _LexiconPanel(study: _study),
+        VerseStudyTool.lexicon => _LexiconPanel(
+            study: _study,
+            versionId: widget.versionId,
+          ),
         VerseStudyTool.dictionary => const _DictionaryPanel(),
         VerseStudyTool.topics => _TopicsPanel(
             bookId: widget.book.id,
@@ -363,7 +369,8 @@ class _ConcordancePanel extends StatelessWidget {
 
 class _LexiconPanel extends StatelessWidget {
   final Future<VerseStudyData> study;
-  const _LexiconPanel({required this.study});
+  final int versionId;
+  const _LexiconPanel({required this.study, required this.versionId});
 
   @override
   Widget build(BuildContext context) => FutureBuilder<VerseStudyData>(
@@ -373,6 +380,28 @@ class _LexiconPanel extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
+            if (snapshot.error is ResourceNotInstalledException) {
+              const manager = ResourceManager();
+              return ListView(
+                padding: const EdgeInsets.all(12),
+                children: [
+                  const Text('Le lexique Strong n’est pas installé.'),
+                  const SizedBox(height: 10),
+                  ResourceInstallCard(
+                    resource: manager.descriptor(OfflineResourceId.strong),
+                    state: OfflineResourceState.notInstalled,
+                    onDownload: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const DownloadManagerScreen(
+                          initialCategory: ResourceCategory.strong,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
             return const EmptyResourceState(
               icon: Icons.error_outline,
               message: 'Impossible de charger le lexique de ce verset.',
@@ -389,8 +418,8 @@ class _LexiconPanel extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
             children: [
               Text(
-                'Termes originaux réellement associés au verset. Ils ne sont '
-                'pas alignés artificiellement avec les mots français.',
+                'Alignement Strong basé sur la Segond 1910. Chaque association '
+                'vient du jeu de données français, sans traduction inventée.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
@@ -405,15 +434,18 @@ class _LexiconPanel extends StatelessWidget {
                     subtitle: Text(
                       [
                         word.lemma == null ? null : 'Lemme : ${word.lemma}',
+                        word.originalWord == null
+                            ? null
+                            : 'Mot original : ${word.originalWord}',
                         word.transliteration == null
                             ? null
                             : 'Translittération : ${word.transliteration}',
                         word.pronunciation == null
                             ? null
                             : 'Prononciation : ${word.pronunciation}',
-                        word.morphology == null
+                        word.morphologyInFrench == null
                             ? null
-                            : 'Morphologie : ${word.morphology}',
+                            : 'Morphologie : ${word.morphologyInFrench}',
                         word.frenchDefinition ??
                             word.shortDefinition ??
                             word.definition,
@@ -423,7 +455,11 @@ class _LexiconPanel extends StatelessWidget {
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => StrongWordScreen(word: word),
+                        builder: (_) => StrongWordScreen(
+                          word: word,
+                          initialVersionId: versionId,
+                        ),
+                        settings: const RouteSettings(name: 'strong-entry'),
                       ),
                     ),
                   ),

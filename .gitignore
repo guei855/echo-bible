@@ -40,6 +40,7 @@ migrate_working_dir/
 /bible_builder/sources/dictionary/vigouroux/cache/
 /bible_builder/backups/
 /bible_builder/sources/dictionary/vigouroux/*.djvu
+/bible_builder/sources/concordance_bible/*.zip
 
 # Local heavyweight databases; never upload bible.db to GitHub.
 /assets/database/bible.db

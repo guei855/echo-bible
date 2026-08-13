@@ -135,14 +135,10 @@ class StudySchema {
         'CREATE INDEX IF NOT EXISTS idx_cross_references_verse '
         'ON cross_references(verse_id)',
       );
-      await transaction.execute(
-        'CREATE INDEX IF NOT EXISTS idx_strong_words_verse '
-        'ON strong_words(verse_id, word_order)',
-      );
-      await transaction.execute(
-        'CREATE INDEX IF NOT EXISTS idx_strong_words_code '
-        'ON strong_words(strong)',
-      );
+      // Strong is an optional downloadable resource. These two legacy tables
+      // only duplicated derived data inside bible.db and are never user data.
+      await transaction.execute('DROP TABLE IF EXISTS strong_words');
+      await transaction.execute('DROP TABLE IF EXISTS strong_dictionary');
     });
 
     final noteColumns = await db.rawQuery('PRAGMA table_info(notes)');
@@ -163,26 +159,6 @@ class StudySchema {
         if (!names.contains(column.key)) {
           await db.execute(
             'ALTER TABLE notes ADD COLUMN ${column.key} ${column.value}',
-          );
-        }
-      }
-    }
-
-    final dictionaryColumns =
-        await db.rawQuery('PRAGMA table_info(strong_dictionary)');
-    if (dictionaryColumns.isNotEmpty) {
-      final names = dictionaryColumns.map((column) => column['name']).toSet();
-      for (final column in const {
-        'gloss': 'TEXT',
-        'morphology': 'TEXT',
-        'source': 'TEXT',
-        'source_url': 'TEXT',
-        'license': 'TEXT',
-      }.entries) {
-        if (!names.contains(column.key)) {
-          await db.execute(
-            'ALTER TABLE strong_dictionary ADD COLUMN '
-            '${column.key} ${column.value}',
           );
         }
       }

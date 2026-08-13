@@ -35,9 +35,9 @@ Future<void> main() async {
     id: 'strong',
     language: 'common',
     category: 'strong',
-    version: '2026-08-13',
-    sourceUrl: 'https://stepbible.org/',
-    license: 'CC BY 4.0',
+    version: '2026-08-13-fr-strong-v1',
+    sourceUrl: 'https://concordance.bible/Sg1910/download/',
+    license: 'STEP Bible CC BY 4.0 ; Segond 1910 domaine public',
     modules: modules,
   );
   await _copyModule(

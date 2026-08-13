@@ -37,15 +37,44 @@ class StrongRepository {
     final query = value.trim();
     if (query.isEmpty) return const [];
     final canonical = _canonical(query);
+    final french = _normalizeFrench(query);
     final db = await StrongDatabaseService.database;
-    final rows = await db.rawQuery('''
+    final digitsOnly = RegExp(r'^0*\d+$').hasMatch(query);
+    if (digitsOnly) {
+      final number = int.parse(query);
+      final rows = await db.rawQuery('''
+        SELECT * FROM strong_entries
+        WHERE UPPER(strong_number) IN (?,?)
+        ORDER BY language,strong_number,id LIMIT ?
+      ''', ['H$number', 'G$number', limit]);
+      return rows.map(StrongEntry.fromMap).toList();
+    }
+    final frenchCodes = await db.rawQuery('''
+      SELECT DISTINCT link.strong_number
+      FROM french_verse_tokens token
+      JOIN french_token_strongs link ON link.token_id=token.id
+      WHERE token.normalized_surface=?
+      ORDER BY link.strong_number LIMIT ?
+    ''', [french, limit]);
+    final frenchEntries = <StrongEntry>[];
+    if (frenchCodes.isNotEmpty) {
+      final codes = frenchCodes.map((row) => row['strong_number']).toList();
+      final placeholders = List.filled(codes.length, '?').join(',');
+      final rows = await db.rawQuery('''
+        SELECT * FROM strong_entries
+        WHERE strong_number IN ($placeholders)
+        ORDER BY strong_number,id LIMIT ?
+      ''', [...codes, limit]);
+      frenchEntries.addAll(rows.map(StrongEntry.fromMap));
+    }
+    final lexicalRows = await db.rawQuery('''
       SELECT * FROM strong_entries
       WHERE UPPER(strong_number) LIKE ? OR LOWER(original_word) LIKE ?
         OR LOWER(transliteration) LIKE ? OR LOWER(gloss) LIKE ?
-          OR LOWER(short_definition) LIKE ? OR LOWER(definition_source) LIKE ?
+        OR LOWER(short_definition) LIKE ? OR LOWER(definition_source) LIKE ?
         OR LOWER(definition_fr) LIKE ?
-      ORDER BY CASE WHEN UPPER(strong_number) = ? THEN 0 ELSE 1 END,
-        strong_number LIMIT ?
+      ORDER BY CASE WHEN UPPER(strong_number)=? THEN 0 ELSE 1 END,
+        strong_number,id LIMIT ?
     ''', [
       '${canonical.toUpperCase()}%',
       '%${query.toLowerCase()}%',
@@ -57,7 +86,16 @@ class StrongRepository {
       canonical.toUpperCase(),
       limit
     ]);
-    return rows.map(StrongEntry.fromMap).toList();
+    final results = <StrongEntry>[];
+    final seen = <int>{};
+    for (final entry in [
+      ...frenchEntries,
+      ...lexicalRows.map(StrongEntry.fromMap),
+    ]) {
+      if (seen.add(entry.id)) results.add(entry);
+      if (results.length == limit) break;
+    }
+    return results;
   }
 
   Future<int> count() async {
@@ -81,9 +119,34 @@ class StrongRepository {
     return rows.map(StrongVerseToken.fromMap).toList();
   }
 
+  Future<List<FrenchStrongToken>> frenchForVerse(
+    int bookId,
+    int chapter,
+    int verse, {
+    String? selectedText,
+  }) async {
+    final db = await StrongDatabaseService.database;
+    final selected = _normalizeFrench(selectedText ?? '');
+    final rows = await db.rawQuery('''
+      SELECT token.id token_id,token.book_id,token.chapter,token.verse,
+        token.token_index,token.surface,token.normalized_surface,
+        token.is_translated,token.source_dataset,
+        link.strong_number,link.strong_order
+      FROM french_verse_tokens token
+      JOIN french_token_strongs link ON link.token_id=token.id
+      WHERE token.book_id=? AND token.chapter=? AND token.verse=?
+        AND (?='' OR token.normalized_surface=?
+          OR (token.normalized_surface<>''
+            AND instr(?,token.normalized_surface)>0))
+      ORDER BY token.token_index,link.strong_order
+    ''', [bookId, chapter, verse, selected, selected, selected]);
+    return rows.map(FrenchStrongToken.fromMap).toList();
+  }
+
   Future<List<StrongVerseToken>> occurrences(
     String value, {
     int limit = 200,
+    int offset = 0,
   }) async {
     final canonical = _canonical(value.trim());
     if (canonical.isEmpty) return const [];
@@ -96,8 +159,8 @@ class StrongRepository {
       WHERE UPPER(strong_number)=?
       GROUP BY strong_number,book_id,chapter,verse
       ORDER BY book_id,chapter,verse
-      LIMIT ?
-    ''', [canonical.toUpperCase(), limit]);
+      LIMIT ? OFFSET ?
+    ''', [canonical.toUpperCase(), limit, offset]);
     return rows.map(StrongVerseToken.fromMap).toList();
   }
 
@@ -114,5 +177,18 @@ class StrongRepository {
         RegExp(r'^[HG](\d+)$', caseSensitive: false).firstMatch(value);
     final number = int.tryParse(match?.group(1) ?? '');
     return number != null && number < 9000;
+  }
+
+  String _normalizeFrench(String value) {
+    const accented = 'àâäáãåçéèêëíìîïñóòôöõúùûüýÿœæ';
+    const plain = 'aaaaaaceeeeiiiinooooouuuuyyoea';
+    var result = value.toLowerCase();
+    for (var index = 0; index < accented.length; index++) {
+      result = result.replaceAll(accented[index], plain[index]);
+    }
+    return result
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), ' ');
   }
 }

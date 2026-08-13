@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-13T22:37:55.906473Z",
+  "generatedAt": "2026-08-13T23:08:06.993887Z",
   "resources": [
     {
       "id": "ostervald",
@@ -78,13 +78,15 @@
       "id": "strong",
       "language": "common",
       "category": "strong",
-      "version": "2026-08-13",
-      "sizeBytes": 71217152,
-      "sha256": "8ee9cf7f091c67b40df6ba95fa682be08c0ed02deeb2136e53b36a7dbea86e58",
+      "version": "2026-08-13-fr-strong-v1",
+      "sizeBytes": 133566464,
+      "sha256": "fce2edda296d09dd1ea3ce6e4be3663ef4ab1ce75744f8a53c4810c966af429b",
       "localFileName": "strong.db",
       "releasePath": "common/strong/strong.db",
-      "sourceUrl": "https://stepbible.org/",
-      "license": "CC BY 4.0"
+      "sourceUrl": "https://concordance.bible/Sg1910/download/",
+      "license": "STEP Bible CC BY 4.0 ; Segond 1910 domaine public",
+      "status": "available",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.2.0-resources/strong.db"
     },
     {
       "id": "crossReferences",

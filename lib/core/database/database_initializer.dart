@@ -71,16 +71,6 @@ class DatabaseInitializer {
             FROM bundled.verse_translations
           ''');
         }
-        await transaction.execute('''
-          INSERT OR REPLACE INTO strong_dictionary(
-            strong, lemma, language, definition, transliteration,
-            gloss, morphology, source, source_url, license
-          )
-          SELECT strong, lemma, language, definition, transliteration,
-            gloss, morphology, source, source_url, license
-          FROM bundled.strong_dictionary
-          WHERE source IN ('TBESH', 'TBESG')
-        ''');
       });
       await database.execute('DETACH DATABASE bundled');
     } finally {

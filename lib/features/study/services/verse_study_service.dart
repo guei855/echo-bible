@@ -6,7 +6,10 @@ import 'package:echo_bible/features/study/repositories/strong_repository.dart';
 class VerseStudyService {
   const VerseStudyService._();
 
-  static Future<VerseStudyData> loadVerse(int verseId) async {
+  static Future<VerseStudyData> loadVerse(
+    int verseId, {
+    String? selectedText,
+  }) async {
     final db = await DatabaseService.database;
     final verseRows = await db.query(
       'verses',
@@ -16,13 +19,23 @@ class VerseStudyService {
       limit: 1,
     );
     final strongRepository = const StrongRepository();
-    var tokens = const <StrongVerseToken>[];
+    var tokens = const <FrenchStrongToken>[];
+    var originalTokens = const <StrongVerseToken>[];
     if (verseRows.isNotEmpty) {
       try {
-        tokens = await strongRepository.forVerse(
-          verseRows.first['book_id'] as int,
-          verseRows.first['chapter_number'] as int,
-          verseRows.first['verse_number'] as int,
+        final bookId = verseRows.first['book_id'] as int;
+        final chapter = verseRows.first['chapter_number'] as int;
+        final verse = verseRows.first['verse_number'] as int;
+        tokens = await strongRepository.frenchForVerse(
+          bookId,
+          chapter,
+          verse,
+          selectedText: selectedText,
+        );
+        originalTokens = await strongRepository.forVerse(
+          bookId,
+          chapter,
+          verse,
         );
       } catch (_) {
         // Optional module not installed: the other study tools remain usable.
@@ -34,17 +47,29 @@ class VerseStudyService {
       ),
     );
     final words = <VerseStrongWord>[];
+    final originalByCode = <String, List<StrongVerseToken>>{};
+    for (final original in originalTokens) {
+      originalByCode.putIfAbsent(original.strongNumber, () => []).add(original);
+    }
+    final consumedByCode = <String, int>{};
     for (var index = 0; index < tokens.length; index++) {
       final token = tokens[index];
       final entry = entries[index];
+      final candidates = originalByCode[token.strongNumber] ?? const [];
+      final consumed = consumedByCode[token.strongNumber] ?? 0;
+      final original = candidates.isEmpty
+          ? null
+          : candidates[consumed.clamp(0, candidates.length - 1)];
+      consumedByCode[token.strongNumber] = consumed + 1;
       words.add(
         VerseStrongWord(
-          id: token.id,
+          id: token.tokenId,
           order: token.position,
-          word: token.originalToken,
+          word: token.displaySurface,
           code: token.strongNumber,
-          lemma: token.lemma ?? entry?.originalWord,
-          morphology: token.morphology ?? entry?.morphology,
+          originalWord: original?.originalToken ?? entry?.originalWord,
+          lemma: original?.lemma ?? entry?.originalWord,
+          morphology: original?.morphology ?? entry?.morphology,
           language: entry?.language,
           definition: entry?.definition,
           frenchDefinition: entry?.frenchDefinition,
@@ -68,12 +93,14 @@ class VerseStudyService {
 
   static Future<List<StrongOccurrence>> loadOccurrences(
     String strongCode, {
-    int limit = 200,
+    int limit = 30,
+    int offset = 0,
   }) async {
     final db = await DatabaseService.database;
     final sourceOccurrences = await const StrongRepository().occurrences(
       strongCode,
       limit: limit,
+      offset: offset,
     );
     if (sourceOccurrences.isEmpty) return const [];
     final clauses = List.filled(

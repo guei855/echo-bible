@@ -47,10 +47,6 @@ void main() async {
             await db.execute(
                 'CREATE TABLE cross_references(id INTEGER PRIMARY KEY, verse_id INTEGER, reference TEXT)');
             await db.execute(
-                'CREATE TABLE strong_words(id INTEGER PRIMARY KEY, verse_id INTEGER, word_order INTEGER, word TEXT, strong TEXT, lemma TEXT, morphology TEXT)');
-            await db.execute(
-                'CREATE TABLE strong_dictionary(strong TEXT PRIMARY KEY, lemma TEXT, language TEXT, definition TEXT, transliteration TEXT, gloss TEXT, morphology TEXT, source TEXT, source_url TEXT, license TEXT)');
-            await db.execute(
                 'CREATE TABLE favorites(id INTEGER PRIMARY KEY, verse_id INTEGER, created_at TEXT)');
             await db.execute(
                 'CREATE TABLE highlights(id INTEGER PRIMARY KEY, verse_id INTEGER, color TEXT)');
@@ -152,7 +148,6 @@ void main() async {
                 'text_clean': textClean,
                 'text_usfx': textUsfx,
                 'cross_references': crossRefs,
-                'strong_words': _extractStrongWordsStatic(verseEl),
               });
             }
           }
@@ -199,18 +194,6 @@ void main() async {
             'verse_id': currentVerseId,
             'usfx': vData['text_usfx'],
           });
-
-          final strongWords =
-              vData['strong_words'] as List<Map<String, String>>;
-          for (var index = 0; index < strongWords.length; index++) {
-            final strongWord = strongWords[index];
-            await txn.insert('strong_words', {
-              'verse_id': currentVerseId,
-              'word_order': index + 1,
-              'word': strongWord['word'],
-              'strong': strongWord['strong'],
-            });
-          }
 
           for (String ref in vData['cross_references']) {
             await txn.insert('cross_references', {
@@ -282,31 +265,4 @@ String _extractTextRecursiveStatic(XmlNode node) {
     return buffer.toString();
   }
   return '';
-}
-
-List<Map<String, String>> _extractStrongWordsStatic(XmlElement verseElement) {
-  final words = <Map<String, String>>[];
-  final seenCodes = <String>{};
-  XmlNode? sibling = verseElement.nextSibling;
-
-  while (sibling != null) {
-    if (sibling is XmlElement) {
-      if (sibling.name.local == 'v' || sibling.name.local == 'c') break;
-
-      final wordElements =
-          sibling.name.local == 'w' ? [sibling] : sibling.findAllElements('w');
-      for (final wordElement in wordElements) {
-        final strong = wordElement.getAttribute('s');
-        if (strong != null && strong.isNotEmpty && seenCodes.add(strong)) {
-          // The translated text inside <w> is not a reliable word-level
-          // alignment with the original language. Keep only the verse-level
-          // Strong relation until a genuine alignment dataset is imported.
-          words.add({'strong': strong, 'word': ''});
-        }
-      }
-    }
-    sibling = sibling.nextSibling;
-  }
-
-  return words;
 }

@@ -109,9 +109,11 @@ class _ConcordanceScreenState extends State<ConcordanceScreen>
               onSubmitted: (_) => _search(),
               decoration: InputDecoration(
                 labelText: _isStrongTab
-                    ? 'Code Strong, mot ou lemme'
+                    ? 'Code Strong, mot français, original ou lemme'
                     : 'Mot ou expression à étudier',
-                hintText: _isStrongTab ? 'Ex. H430 ou G26' : 'Ex. espérance',
+                hintText: _isStrongTab
+                    ? 'Ex. H430, 26, Dieu, logos ou λόγος'
+                    : 'Ex. espérance',
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.search),
@@ -229,12 +231,16 @@ class _ConcordanceScreenState extends State<ConcordanceScreen>
                   order: 0,
                   word: item.lemma,
                   code: item.code,
+                  originalWord: item.lemma,
                   lemma: item.lemma,
                   morphology: item.morphology,
                   language: item.language,
                   definition: item.definition,
                   transliteration: item.transliteration,
+                  pronunciation: item.pronunciation,
                   gloss: item.gloss,
+                  shortDefinition: item.shortDefinition,
+                  frenchDefinition: item.frenchDefinition,
                   source: item.source,
                   license: item.license,
                 ),

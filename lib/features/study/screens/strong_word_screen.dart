@@ -5,15 +5,49 @@ import 'package:echo_bible/features/study/models/strong_entry.dart';
 import 'package:echo_bible/features/study/services/verse_study_service.dart';
 import 'package:flutter/material.dart';
 
-class StrongWordScreen extends StatelessWidget {
+class StrongWordScreen extends StatefulWidget {
   final VerseStrongWord word;
   final Future<List<StrongOccurrence>>? occurrences;
+  final int? initialVersionId;
 
   const StrongWordScreen({
     super.key,
     required this.word,
     this.occurrences,
+    this.initialVersionId,
   });
+
+  @override
+  State<StrongWordScreen> createState() => _StrongWordScreenState();
+}
+
+class _StrongWordScreenState extends State<StrongWordScreen> {
+  static const _pageSize = 30;
+  late Future<List<StrongOccurrence>> _occurrences;
+  bool _hasMore = true;
+
+  VerseStrongWord get word => widget.word;
+
+  @override
+  void initState() {
+    super.initState();
+    _occurrences = widget.occurrences ??
+        VerseStudyService.loadOccurrences(word.code, limit: _pageSize);
+    if (widget.occurrences != null) _hasMore = false;
+  }
+
+  void _loadMore(List<StrongOccurrence> current) {
+    setState(() {
+      _occurrences = VerseStudyService.loadOccurrences(
+        word.code,
+        limit: _pageSize,
+        offset: current.length,
+      ).then((next) {
+        _hasMore = next.length == _pageSize;
+        return [...current, ...next];
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +55,7 @@ class StrongWordScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text('${word.code} · ${word.word}')),
       body: FutureBuilder<List<StrongOccurrence>>(
-        future: occurrences ?? VerseStudyService.loadOccurrences(word.code),
+        future: _occurrences,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
@@ -58,15 +92,25 @@ class StrongWordScreen extends StatelessWidget {
                                 fontWeight: FontWeight.bold,
                               ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          word.word,
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    color: colors.onSurface,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                        const SizedBox(height: 10),
+                        Directionality(
+                          textDirection: word.inferredLanguage == 'Hébreu'
+                              ? TextDirection.rtl
+                              : TextDirection.ltr,
+                          child: SelectableText(
+                            word.originalWord ?? word.lemma ?? word.word,
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(
+                                  color: colors.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
                         ),
+                        if (word.word != (word.originalWord ?? word.lemma))
+                          _Field(label: 'Mot français', value: word.word),
+                        _Field(label: 'Lemme', value: word.lemma),
                         const SizedBox(height: 12),
                         Wrap(
                           spacing: 8,
@@ -85,13 +129,16 @@ class StrongWordScreen extends StatelessWidget {
                           label: 'Prononciation',
                           value: word.pronunciation,
                         ),
-                        _Field(label: 'Morphologie', value: word.morphology),
+                        _Field(
+                          label: 'Morphologie',
+                          value: word.morphologyInFrench,
+                        ),
                         _Field(
                           label: 'Sens court (source)',
                           value: word.shortDefinition ?? word.gloss,
                         ),
                         _Field(
-                          label: 'Définition lexicale (source)',
+                          label: 'Définition de la source (anglais)',
                           value: word.definition,
                         ),
                         if (word.frenchDefinition?.trim().isNotEmpty ?? false)
@@ -112,7 +159,7 @@ class StrongWordScreen extends StatelessWidget {
                         if (word.frenchDefinition?.trim().isEmpty ?? true) ...[
                           const SizedBox(height: 12),
                           Text(
-                            'Traduction française non disponible pour cette entrée.',
+                            'Définition française non disponible dans les ressources installées.',
                             style:
                                 Theme.of(context).textTheme.bodySmall?.copyWith(
                                       color: colors.onSurfaceVariant,
@@ -120,6 +167,10 @@ class StrongWordScreen extends StatelessWidget {
                                     ),
                           ),
                         ],
+                        _Field(
+                          label: 'Détails techniques — morphologie brute',
+                          value: word.morphology,
+                        ),
                       ],
                     ),
                   ),
@@ -129,7 +180,8 @@ class StrongWordScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 sliver: SliverToBoxAdapter(
                   child: Text(
-                    '${occurrences.length} occurrence${occurrences.length > 1 ? 's' : ''}',
+                    'Occurrences dans le texte original · '
+                    '${occurrences.length} affichée${occurrences.length > 1 ? 's' : ''}',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           color: colors.onSurface,
                           fontWeight: FontWeight.bold,
@@ -181,6 +233,17 @@ class StrongWordScreen extends StatelessWidget {
                     );
                   },
                 ),
+              if (occurrences.isNotEmpty && _hasMore)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: OutlinedButton.icon(
+                      onPressed: () => _loadMore(occurrences),
+                      icon: const Icon(Icons.expand_more),
+                      label: const Text('Afficher plus'),
+                    ),
+                  ),
+                ),
             ],
           );
         },
@@ -208,6 +271,7 @@ class StrongWordScreen extends StatelessWidget {
           ),
           initialChapter: occurrence.chapterNumber,
           initialVerse: occurrence.verseNumber,
+          initialVersionId: widget.initialVersionId,
         ),
       ),
     );

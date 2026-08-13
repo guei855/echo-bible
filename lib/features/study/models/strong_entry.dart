@@ -116,3 +116,49 @@ class StrongVerseToken {
         position: map['token_position'] as int,
       );
 }
+
+class FrenchStrongToken {
+  final int tokenId;
+  final int bookId;
+  final int chapter;
+  final int verse;
+  final int position;
+  final String surface;
+  final String normalizedSurface;
+  final bool isTranslated;
+  final String strongNumber;
+  final int strongOrder;
+  final String sourceDataset;
+
+  const FrenchStrongToken({
+    required this.tokenId,
+    required this.bookId,
+    required this.chapter,
+    required this.verse,
+    required this.position,
+    required this.surface,
+    required this.normalizedSurface,
+    required this.isTranslated,
+    required this.strongNumber,
+    required this.strongOrder,
+    required this.sourceDataset,
+  });
+
+  factory FrenchStrongToken.fromMap(Map<String, Object?> map) =>
+      FrenchStrongToken(
+        tokenId: map['token_id'] as int,
+        bookId: map['book_id'] as int,
+        chapter: map['chapter'] as int,
+        verse: map['verse'] as int,
+        position: map['token_index'] as int,
+        surface: map['surface'] as String,
+        normalizedSurface: map['normalized_surface'] as String,
+        isTranslated: map['is_translated'] == 1,
+        strongNumber: map['strong_number'] as String,
+        strongOrder: map['strong_order'] as int,
+        sourceDataset: map['source_dataset'] as String,
+      );
+
+  String get displaySurface =>
+      isTranslated ? surface : '[terme original non traduit]';
+}

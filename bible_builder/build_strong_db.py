@@ -1,21 +1,33 @@
 """Build the production Strong lexicon from official STEPBible sources."""
 
 import argparse
+import csv
+import datetime as dt
+import difflib
 import hashlib
 import html
+import io
 import os
 import re
 import shutil
 import sqlite3
+import unicodedata
+import zipfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "bible_builder" / "sources" / "stepbible"
+FRENCH_SOURCE_DIR = ROOT / "bible_builder" / "sources" / "concordance_bible"
 OUTPUT = ROOT / "assets" / "database" / "strong.db"
 BACKUP = ROOT / "bible_builder" / "backups" / "strong.db.latest.bak"
 SOURCE_URL = "https://github.com/STEPBible/STEPBible-Data"
 LICENSE = "CC BY 4.0"
+FRENCH_SOURCE_URL = "https://concordance.bible/Sg1910/download/"
+FRENCH_ATTRIBUTION = (
+    'Numéros Strong affectés en 2026 par “Concordances et Traductions '
+    'de la Bible” (concordance.bible).'
+)
 
 BOOK_IDS = {
     code: index + 1
@@ -26,6 +38,19 @@ BOOK_IDS = {
             "Amo Oba Jon Mic Nam Hab Zep Hag Zec Mal Mat Mrk Luk Jhn Act "
             "Rom 1Co 2Co Gal Eph Php Col 1Th 2Th 1Ti 2Ti Tit Phm Heb Jas "
             "1Pe 2Pe 1Jn 2Jn 3Jn Jud Rev"
+        ).split()
+    )
+}
+FRENCH_BOOK_IDS = {
+    code: index + 1
+    for index, code in enumerate(
+        (
+            "Gen Exod Lev Num Deut Josh Judg Ruth 1Sam 2Sam 1Kgs 2Kgs "
+            "1Chr 2Chr Ezra Neh Esth Job Ps Prov Eccl Song Isa Jer Lam "
+            "Ezek Dan Hos Joel Amos Obad Jonah Mic Nah Hab Zeph Hag Zech "
+            "Mal Matt Mark Luke John Acts Rom 1Cor 2Cor Gal Eph Phil Col "
+            "1Thess 2Thess 1Tim 2Tim Titus Phlm Heb Jas 1Pet 2Pet 1John "
+            "2John 3John Jude Rev"
         ).split()
     )
 }
@@ -229,7 +254,165 @@ def morphology_rows(path: Path, language: str):
                 yield code, language, example or None, description, path.name[:5]
 
 
-def build(source_dir: Path, output: Path, backup: Path | None) -> None:
+def normalized_french(value: str) -> str:
+    """Accent-insensitive key used for French lookup, never for display."""
+    decomposed = unicodedata.normalize("NFKD", html.unescape(value).casefold())
+    without_marks = "".join(
+        character
+        for character in decomposed
+        if unicodedata.category(character) != "Mn"
+    )
+    return " ".join(re.findall(r"[a-z0-9]+", without_marks))
+
+
+def french_csv_rows(archive: Path, member: str) -> list[dict[str, str]]:
+    if not archive.exists():
+        raise SystemExit(
+            f"Missing {archive}. Download it from {FRENCH_SOURCE_URL}"
+        )
+    with zipfile.ZipFile(archive) as bundle, bundle.open(member) as raw:
+        reader = csv.DictReader(
+            io.TextIOWrapper(raw, encoding="utf-8-sig"), delimiter="\t"
+        )
+        return list(reader)
+
+
+def french_tokens(markup: str):
+    pattern = re.compile(
+        r'<w\s+[^>]*strong="([^"]+)"[^>]*>(.*?)</w>', re.I | re.S
+    )
+    for position, match in enumerate(pattern.finditer(markup), start=1):
+        strongs = tuple(
+            dict.fromkeys(
+                canonical(code)
+                for code in re.findall(r"[HG]0*\d+[A-Za-z]*", match.group(1), re.I)
+            )
+        )
+        surface = plain(match.group(2))
+        if strongs:
+            yield position, surface, normalized_french(surface), strongs
+
+
+def build_versification_pairs(
+    source_rows: list[dict[str, str]], canonical_rows: list[dict[str, str]]
+):
+    """Align official WLC/NA references with historical Segond references.
+
+    Exact verse text is authoritative. Small changed/split blocks are paired
+    locally by their ordered Strong sequences, and retain an explicit method
+    and confidence instead of silently rewriting Bible databases.
+    """
+    for book in FRENCH_BOOK_IDS:
+        source = [row for row in source_rows if row["book_id"] == book]
+        target = [row for row in canonical_rows if row["book_id"] == book]
+        matcher = difflib.SequenceMatcher(
+            None,
+            [row["text"] for row in source],
+            [row["text"] for row in target],
+            autojunk=False,
+        )
+        for tag, source_start, source_end, target_start, target_end in matcher.get_opcodes():
+            if tag == "equal":
+                for offset in range(target_end - target_start):
+                    yield source[source_start + offset], target[target_start + offset], "exact_text", 1.0
+                continue
+            candidates = source[max(0, source_start - 1) : min(len(source), source_end + 1)]
+            for target_row in target[target_start:target_end]:
+                target_codes = [code for _, _, _, codes in french_tokens(target_row["text"]) for code in codes]
+                best_row = None
+                best_score = -1.0
+                for source_row in candidates:
+                    source_codes = [code for _, _, _, codes in french_tokens(source_row["text"]) for code in codes]
+                    score = difflib.SequenceMatcher(None, source_codes, target_codes, autojunk=False).ratio()
+                    if score > best_score:
+                        best_row, best_score = source_row, score
+                if best_row is None:
+                    best_row = target_row
+                    best_score = 0.0
+                yield best_row, target_row, "strong_sequence", best_score
+
+
+def import_french_alignment(database: sqlite3.Connection, source_dir: Path):
+    canonical_archive = source_dir / "Sg1910-csv_v11n.zip"
+    editorial_archive = source_dir / "Sg1910-csv.zip"
+    canonical_rows = french_csv_rows(canonical_archive, "Sg1910_v11n.csv")
+    editorial_rows = french_csv_rows(editorial_archive, "Sg1910.csv")
+    mappings = list(build_versification_pairs(editorial_rows, canonical_rows))
+    mapping_by_canonical = {
+        (target["book_id"], int(target["num_chapter"]), int(target["num_verse"])):
+        (source, method, confidence)
+        for source, target, method, confidence in mappings
+    }
+    token_count = 0
+    association_count = 0
+    empty_count = 0
+    for row in canonical_rows:
+        book_code = row["book_id"]
+        chapter = int(row["num_chapter"])
+        verse = int(row["num_verse"])
+        source, method, confidence = mapping_by_canonical[(book_code, chapter, verse)]
+        database.execute(
+            """INSERT INTO versification_mappings(
+              source_dataset,source_book_code,source_chapter,source_verse,
+              book_id,chapter,verse,method,confidence
+            ) VALUES(?,?,?,?,?,?,?,?,?)""",
+            (
+                "Sg1910-WLC-NA",
+                source["book_id"],
+                int(source["num_chapter"]),
+                int(source["num_verse"]),
+                FRENCH_BOOK_IDS[book_code],
+                chapter,
+                verse,
+                method,
+                confidence,
+            ),
+        )
+        for position, surface, normalized, strongs in french_tokens(row["text"]):
+            cursor = database.execute(
+                """INSERT INTO french_verse_tokens(
+                  book_id,chapter,verse,token_index,surface,normalized_surface,
+                  is_translated,source_dataset
+                ) VALUES(?,?,?,?,?,?,?,?)""",
+                (
+                    FRENCH_BOOK_IDS[book_code],
+                    chapter,
+                    verse,
+                    position,
+                    surface,
+                    normalized,
+                    int(bool(surface.strip())),
+                    "Sg1910-v11n",
+                ),
+            )
+            token_id = cursor.lastrowid
+            database.executemany(
+                """INSERT INTO french_token_strongs(
+                  token_id,strong_number,strong_order
+                ) VALUES(?,?,?)""",
+                ((token_id, code, order) for order, code in enumerate(strongs, start=1)),
+            )
+            token_count += 1
+            association_count += len(strongs)
+            empty_count += int(not surface.strip())
+    return {
+        "french_tokens": token_count,
+        "french_associations": association_count,
+        "french_untranslated_tokens": empty_count,
+        "versification_mappings": len(mappings),
+        "french_editorial_archive": editorial_archive.name,
+        "french_editorial_sha256": sha256(editorial_archive),
+        "french_historical_archive": canonical_archive.name,
+        "french_historical_sha256": sha256(canonical_archive),
+    }
+
+
+def build(
+    source_dir: Path,
+    french_source_dir: Path,
+    output: Path,
+    backup: Path | None,
+) -> None:
     hebrew = source_file(source_dir, "TBESH")
     greek = source_file(source_dir, "TBESG")
     tahot = source_files(source_dir, "TAHOT")
@@ -299,6 +482,48 @@ def build(source_dir: Path, output: Path, backup: Path | None) -> None:
             source TEXT NOT NULL
           );
           CREATE INDEX idx_morphology_code ON morphology_codes(code);
+          CREATE TABLE french_verse_tokens(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            book_id INTEGER NOT NULL,
+            chapter INTEGER NOT NULL,
+            verse INTEGER NOT NULL,
+            token_index INTEGER NOT NULL,
+            surface TEXT NOT NULL,
+            normalized_surface TEXT NOT NULL,
+            is_translated INTEGER NOT NULL CHECK(is_translated IN (0,1)),
+            source_dataset TEXT NOT NULL
+          );
+          CREATE UNIQUE INDEX idx_french_token_reference
+            ON french_verse_tokens(book_id,chapter,verse,token_index);
+          CREATE INDEX idx_french_token_surface
+            ON french_verse_tokens(normalized_surface,book_id,chapter,verse);
+          CREATE TABLE french_token_strongs(
+            token_id INTEGER NOT NULL,
+            strong_number TEXT NOT NULL,
+            strong_order INTEGER NOT NULL,
+            PRIMARY KEY(token_id,strong_number),
+            FOREIGN KEY(token_id) REFERENCES french_verse_tokens(id)
+          );
+          CREATE INDEX idx_french_association_strong
+            ON french_token_strongs(strong_number,token_id);
+          CREATE TABLE versification_mappings(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_dataset TEXT NOT NULL,
+            source_book_code TEXT NOT NULL,
+            source_chapter INTEGER NOT NULL,
+            source_verse INTEGER NOT NULL,
+            book_id INTEGER NOT NULL,
+            chapter INTEGER NOT NULL,
+            verse INTEGER NOT NULL,
+            method TEXT NOT NULL,
+            confidence REAL NOT NULL
+          );
+          CREATE INDEX idx_versification_source
+            ON versification_mappings(
+              source_dataset,source_book_code,source_chapter,source_verse
+            );
+          CREATE INDEX idx_versification_canonical
+            ON versification_mappings(book_id,chapter,verse);
           CREATE TABLE metadata(
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -348,6 +573,7 @@ def build(source_dir: Path, output: Path, backup: Path | None) -> None:
             ) VALUES(?,?,?,?,?)""",
             morphology_rows(tegmc, "Grec"),
         )
+        french_metadata = import_french_alignment(database, french_source_dir)
         occurrence_counts = dict(
             database.execute(
                 """SELECT source_dataset, COUNT(*) FROM strong_occurrences
@@ -377,6 +603,16 @@ def build(source_dir: Path, output: Path, backup: Path | None) -> None:
             "occurrence_policy": (
                 "Original-language tokens only; never aligned to French words"
             ),
+            "french_source": "Segond 1910 avec numéros Strong",
+            "french_source_url": FRENCH_SOURCE_URL,
+            "french_text_license": "Domaine public",
+            "french_strong_license": "Utilisation libre avec attribution",
+            "french_attribution": FRENCH_ATTRIBUTION,
+            "french_retrieved_at": dt.date.today().isoformat(),
+            "french_alignment_policy": (
+                "Real source mapping only; no automatic translation"
+            ),
+            **{key: str(value) for key, value in french_metadata.items()},
         }
         for path in [*tahot, *tagnt, tehmc, tegmc]:
             metadata[f"sha256_{path.name[:5].lower()}_{sha256(path)[:8]}"] = sha256(path)
@@ -401,6 +637,21 @@ def build(source_dir: Path, output: Path, backup: Path | None) -> None:
             ).fetchone()
             if not occurrence:
                 raise SystemExit(f"Required Strong occurrence missing: {code}")
+        for book_id, chapter, verse, surface, code in (
+            (1, 1, 1, "commencement", "H7225"),
+            (43, 1, 1, "parole", "G3056"),
+        ):
+            found = database.execute(
+                """SELECT 1 FROM french_verse_tokens token
+                   JOIN french_token_strongs link ON link.token_id=token.id
+                   WHERE token.book_id=? AND token.chapter=? AND token.verse=?
+                     AND token.normalized_surface=? AND link.strong_number=?""",
+                (book_id, chapter, verse, surface, code),
+            ).fetchone()
+            if not found:
+                raise SystemExit(
+                    f"Required French Strong alignment missing: {surface} -> {code}"
+                )
     finally:
         database.close()
 
@@ -419,12 +670,16 @@ def build(source_dir: Path, output: Path, backup: Path | None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-dir", type=Path, default=SOURCE_DIR)
+    parser.add_argument(
+        "--french-source-dir", type=Path, default=FRENCH_SOURCE_DIR
+    )
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--backup", type=Path, default=BACKUP)
     parser.add_argument("--no-backup", action="store_true")
     arguments = parser.parse_args()
     build(
         arguments.source_dir,
+        arguments.french_source_dir,
         arguments.output,
         None if arguments.no_backup else arguments.backup,
     )

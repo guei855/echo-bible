@@ -97,14 +97,8 @@ void main() {
     final noteColumnNames = noteColumns.map((column) => column['name']).toSet();
     expect(noteColumnNames, containsAll(['title', 'updated_at']));
 
-    final dictionaryColumns =
-        await db.rawQuery('PRAGMA table_info(strong_dictionary)');
-    final dictionaryColumnNames =
-        dictionaryColumns.map((column) => column['name']).toSet();
-    expect(
-      dictionaryColumnNames,
-      containsAll(['gloss', 'morphology', 'source', 'source_url', 'license']),
-    );
+    expect(names, isNot(contains('strong_words')));
+    expect(names, isNot(contains('strong_dictionary')));
 
     final planColumns = await db.rawQuery('PRAGMA table_info(reading_plans)');
     final planColumnNames = planColumns.map((column) => column['name']).toSet();

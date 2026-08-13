@@ -12,6 +12,16 @@ import 'package:flutter/services.dart';
 typedef DownloadProgress = void Function(int received, int total);
 
 class ResourceManager {
+  static final Map<OfflineResourceId, Future<void> Function()>
+      _releaseHandlers = {};
+
+  static void registerReleaseHandler(
+    OfflineResourceId id,
+    Future<void> Function() handler,
+  ) {
+    _releaseHandlers[id] = handler;
+  }
+
   final Map<OfflineResourceId, ResourceDescriptor>? resourceOverrides;
   final Map<String, Map<String, Object?>>? manifestOverrides;
   final Directory? rootDirectory;
@@ -172,20 +182,21 @@ class ResourceManager {
     ),
     OfflineResourceId.strong: ResourceDescriptor(
       id: OfflineResourceId.strong,
-      name: 'Lexique Strong original',
+      name: 'Lexique Strong hébreu et grec',
       shortName: 'Strong',
       language: ResourceLanguage.common,
       category: ResourceCategory.strong,
-      description: 'Lexique hébreu et grec avec occurrences bibliques.',
-      version: '2026-08-13',
-      sizeBytes: 71217152,
+      description:
+          'Lexique original, morphologie, occurrences et alignement français Segond 1910.',
+      version: '2026-08-13-fr-strong-v1',
+      sizeBytes: 133566464,
       sha256:
-          '8ee9cf7f091c67b40df6ba95fa682be08c0ed02deeb2136e53b36a7dbea86e58',
+          'fce2edda296d09dd1ea3ce6e4be3663ef4ab1ce75744f8a53c4810c966af429b',
       downloadUrl:
           _releaseBase == '' ? null : '$_releaseBase/common/strong/strong.db',
-      license: 'CC BY 4.0',
-      source: 'STEPBible / Tyndale House Cambridge',
-      sourceUrl: 'https://stepbible.org/',
+      license: 'STEP Bible CC BY 4.0 ; Segond 1910 domaine public',
+      source: 'STEP Bible / Concordances et Traductions de la Bible',
+      sourceUrl: 'https://concordance.bible/Sg1910/download/',
       localFileName: 'strong.db',
     ),
     OfflineResourceId.crossReferences: ResourceDescriptor(
@@ -415,7 +426,10 @@ class ResourceManager {
     if (path.extension(target.path).toLowerCase() == '.db') {
       await validateSqliteFile(temporary.path);
     }
-    if (await target.exists()) await target.delete();
+    if (await target.exists()) {
+      await _releaseHandlers[resource.id]?.call();
+      await target.delete();
+    }
     await temporary.rename(target.path);
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
@@ -431,6 +445,7 @@ class ResourceManager {
     final resource = descriptor(id);
     if (resource.bundled) throw const ResourceBundledException();
     final file = await installedFile(resource);
+    await _releaseHandlers[id]?.call();
     if (await file.exists()) await file.delete();
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove('resource_${id.name}_version');

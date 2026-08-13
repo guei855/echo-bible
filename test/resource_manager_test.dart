@@ -26,7 +26,7 @@ void main() {
     );
     expect(
       await manager.state(OfflineResourceId.strong),
-      OfflineResourceState.readyForHosting,
+      OfflineResourceState.notInstalled,
     );
     expect(
       await manager.state(OfflineResourceId.paroleDeVie),
@@ -109,6 +109,7 @@ void main() {
     addTearDown(() => directory.delete(recursive: true));
     final manager = ResourceManager(rootDirectory: directory);
     const modules = {
+      OfflineResourceId.strong: 'common/strong/strong.db',
       OfflineResourceId.nave: 'en/nave/nave_core.db',
       OfflineResourceId.naveFrench: 'fr/nave/nave_fr.db',
       OfflineResourceId.crossReferences:
@@ -125,7 +126,7 @@ void main() {
       await manager.installFromFile(entry.key, source);
       expect(await manager.state(entry.key), OfflineResourceState.installed);
     }
-  });
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('télécharge réellement les modules d’étude puis reste offline',
       () async {

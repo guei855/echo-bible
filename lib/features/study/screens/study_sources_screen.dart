@@ -16,6 +16,14 @@ class StudySourcesScreen extends StatelessWidget {
               url: 'https://github.com/STEPBible/STEPBible-Data',
             ),
             _SourceCard(
+              title: 'Alignement français Segond 1910 → Strong',
+              source:
+                  'Numéros Strong affectés en 2026 par “Concordances et Traductions de la Bible” (concordance.bible).',
+              license:
+                  'Texte Segond 1910 : domaine public ; numéros Strong : utilisation libre avec attribution',
+              url: 'https://concordance.bible/Sg1910/download/',
+            ),
+            _SourceCard(
               title: 'Références croisées',
               source: 'OpenBible.info Cross References',
               license: 'Creative Commons Attribution 4.0 (CC BY 4.0)',

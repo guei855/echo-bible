@@ -28,7 +28,7 @@ void main() {
     expect(study.strongWords, isNotEmpty);
     expect(study.strongWords.map((word) => word.code), contains('H7225'));
     expect(study.strongWords.first.inferredLanguage, 'Hébreu');
-    expect(study.strongWords.first.word, isNot('Au'));
+    expect(study.strongWords.first.word, 'commencement');
     // Les références sont chargées paresseusement à l’ouverture de leur onglet.
     expect(study.crossReferences, isEmpty);
 
@@ -51,7 +51,8 @@ void main() {
     final h3588 = genesisStudy.strongWords.singleWhere(
       (word) => word.code == 'H3588',
     );
-    expect(h3588.word, 'כִּי');
+    expect(h3588.word, 'que');
+    expect(h3588.originalWord, 'כִּי');
     expect(h3588.transliteration, 'ki');
     expect(
       genesisStudy.strongWords.every(
@@ -60,6 +61,29 @@ void main() {
       isTrue,
     );
     expect(genesisStudy.crossReferences, isEmpty);
+
+    final selectedGenesis = await VerseStudyService.loadVerse(
+      verseId,
+      selectedText: 'commencement',
+    );
+    expect(selectedGenesis.strongWords, hasLength(1));
+    expect(selectedGenesis.strongWords.single.code, 'H7225');
+
+    final johnOneOne = await db.query(
+      'verses',
+      columns: ['id'],
+      where: 'book_id=? AND chapter_number=? AND verse_number=?',
+      whereArgs: [43, 1, 1],
+      limit: 1,
+    );
+    final selectedWord = await VerseStudyService.loadVerse(
+      johnOneOne.single['id'] as int,
+      selectedText: 'Parole',
+    );
+    expect(selectedWord.strongWords.map((word) => word.code).toSet(), {
+      'G3056',
+    });
+    expect(selectedWord.strongWords.first.word, 'Parole');
 
     final h3588Occurrences = await VerseStudyService.loadOccurrences('H3588');
     expect(
