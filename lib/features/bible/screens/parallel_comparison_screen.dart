@@ -77,11 +77,23 @@ class _PassageComparisonViewState extends State<PassageComparisonView> {
   Set<int> _selectedIds = const {};
   List<_ComparedPassage> _passages = const [];
   bool _loading = true;
+  int _passageRequestGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _initialize();
+  }
+
+  @override
+  void didUpdateWidget(covariant PassageComparisonView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.bookId != widget.bookId ||
+        oldWidget.chapter != widget.chapter ||
+        oldWidget.verseStart != widget.verseStart ||
+        oldWidget.verseEnd != widget.verseEnd) {
+      _loadPassages();
+    }
   }
 
   Future<void> _initialize() async {
@@ -111,8 +123,9 @@ class _PassageComparisonViewState extends State<PassageComparisonView> {
   }
 
   Future<void> _loadPassages() async {
+    final generation = ++_passageRequestGeneration;
     if (_versions.isEmpty || _selectedIds.isEmpty) {
-      if (!mounted) return;
+      if (!mounted || generation != _passageRequestGeneration) return;
       setState(() {
         _passages = const [];
         _loading = false;
@@ -123,17 +136,21 @@ class _PassageComparisonViewState extends State<PassageComparisonView> {
     final selectedVersions = _versions
         .where((version) => _selectedIds.contains(version.id))
         .toList();
+    final requestedBook = widget.bookId;
+    final requestedChapter = widget.chapter;
+    final requestedStart = widget.verseStart;
+    final requestedEnd = widget.verseEnd;
     final passages = await Future.wait(
       selectedVersions.map((version) async {
         final rows = await (widget.chapterLoader?.call(version.id) ??
             BibleVersionRepository.getChapter(
-              bookId: widget.bookId,
-              chapterNumber: widget.chapter,
+              bookId: requestedBook,
+              chapterNumber: requestedChapter,
               versionId: version.id,
             ));
         final selectedRows = rows.where((row) {
           final number = row['verse_number'] as int;
-          return number >= widget.verseStart && number <= widget.verseEnd;
+          return number >= requestedStart && number <= requestedEnd;
         }).toList();
         return _ComparedPassage(
           version: version,
@@ -144,7 +161,7 @@ class _PassageComparisonViewState extends State<PassageComparisonView> {
         );
       }),
     );
-    if (!mounted) return;
+    if (!mounted || generation != _passageRequestGeneration) return;
     setState(() {
       _passages = passages;
       _loading = false;

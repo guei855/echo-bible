@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:echo_bible/features/bible/models/bible_version.dart';
 import 'package:echo_bible/features/bible/screens/parallel_comparison_screen.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +39,7 @@ Widget _host({
   int start = 16,
   int end = 16,
   ThemeMode themeMode = ThemeMode.light,
+  ChapterLoader? chapterLoader,
 }) =>
     MaterialApp(
       theme: ThemeData.light(),
@@ -49,7 +52,7 @@ Widget _host({
           verseStart: start,
           verseEnd: end,
           versionLoader: () async => versions,
-          chapterLoader: (id) async => _chapter(id),
+          chapterLoader: chapterLoader ?? (id) async => _chapter(id),
         ),
       ),
     );
@@ -119,5 +122,66 @@ void main() {
     final lsg = tester.getTopLeft(find.text('LSG — Louis Segond 1910'));
     final darby = tester.getTopLeft(find.text('DARBY — Darby'));
     expect((lsg.dy - darby.dy).abs(), lessThan(4));
+  });
+
+  testWidgets('ignore les réponses obsolètes pendant une navigation rapide', (
+    tester,
+  ) async {
+    var requestedVerse = 1;
+    final pending = <String, Completer<List<Map<String, Object?>>>>{};
+    Future<List<Map<String, Object?>>> loader(int versionId) =>
+        (pending['$requestedVerse:$versionId'] ??=
+                Completer<List<Map<String, Object?>>>())
+            .future;
+
+    await tester.pumpWidget(
+      _host(
+        versions: const [_lsg, _darby],
+        start: 1,
+        end: 1,
+        chapterLoader: loader,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    for (final verse in [2, 3, 4]) {
+      requestedVerse = verse;
+      await tester.pumpWidget(
+        _host(
+          versions: const [_lsg, _darby],
+          start: verse,
+          end: verse,
+          chapterLoader: loader,
+        ),
+      );
+      await tester.pump();
+    }
+    for (final version in const [_lsg, _darby]) {
+      pending['4:${version.id}']!.complete([
+        {
+          'verse_number': 4,
+          'text': '${version.abbreviation} 8:4',
+          'uses_default_text': 0,
+        },
+      ]);
+    }
+    await tester.pump();
+    expect(find.textContaining('LSG 8:4'), findsOneWidget);
+    expect(find.textContaining('DARBY 8:4'), findsOneWidget);
+
+    for (final verse in [1, 2, 3]) {
+      for (final version in const [_lsg, _darby]) {
+        pending['$verse:${version.id}']!.complete([
+          {
+            'verse_number': verse,
+            'text': '${version.abbreviation} obsolète 8:$verse',
+            'uses_default_text': 0,
+          },
+        ]);
+      }
+      await tester.pump();
+    }
+    expect(find.textContaining('LSG 8:4'), findsOneWidget);
+    expect(find.textContaining('obsolète'), findsNothing);
   });
 }

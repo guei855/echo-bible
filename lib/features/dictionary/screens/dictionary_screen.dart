@@ -7,10 +7,24 @@ import 'package:echo_bible/core/resources/resource_manager.dart';
 import 'package:echo_bible/shared/widgets/resource_install_card.dart';
 import 'package:flutter/material.dart';
 
+typedef DictionaryEntryLoader = Future<List<DictionaryEntry>> Function(
+  String value,
+);
+typedef DictionaryLetterLoader = Future<List<DictionaryEntry>> Function(
+  String letter,
+);
+
 class DictionaryScreen extends StatefulWidget {
   final Future<bool>? availability;
+  final DictionaryEntryLoader? searchLoader;
+  final DictionaryLetterLoader? letterLoader;
 
-  const DictionaryScreen({super.key, this.availability});
+  const DictionaryScreen({
+    super.key,
+    this.availability,
+    this.searchLoader,
+    this.letterLoader,
+  });
 
   @override
   State<DictionaryScreen> createState() => _DictionaryScreenState();
@@ -24,6 +38,9 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
   List<DictionaryEntry> _results = const [];
   bool _loading = false;
   bool _initialLoaded = false;
+  int _requestGeneration = 0;
+  String? _selectedLetter;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -38,26 +55,56 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
 
   Future<void> _search() async {
     final query = _controller.text.trim();
-    setState(() => _loading = true);
-    final results = query.isEmpty
-        ? await _repository.listAlphabetically()
-        : await _repository.search(query);
-    if (!mounted) return;
     setState(() {
-      _results = results;
-      _loading = false;
-      _initialLoaded = true;
+      _selectedLetter = null;
     });
+    await _runQuery(
+      () =>
+          widget.searchLoader?.call(query) ??
+          (query.isEmpty
+              ? _repository.listAlphabetically()
+              : _repository.search(query)),
+    );
   }
 
   Future<void> _loadLetter(String letter) async {
-    setState(() => _loading = true);
-    final results = await _repository.listAlphabetically(letter: letter);
-    if (!mounted) return;
     setState(() {
-      _results = results;
-      _loading = false;
+      _selectedLetter = letter;
+      _controller.clear();
     });
+    await _runQuery(
+      () =>
+          widget.letterLoader?.call(letter) ??
+          _repository.listAlphabetically(letter: letter),
+    );
+  }
+
+  Future<void> _runQuery(
+    Future<List<DictionaryEntry>> Function() query,
+  ) async {
+    final generation = ++_requestGeneration;
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
+    try {
+      final results = await query();
+      if (!mounted || generation != _requestGeneration) return;
+      setState(() => _results = results);
+    } catch (_) {
+      if (!mounted || generation != _requestGeneration) return;
+      setState(() {
+        _results = const [];
+        _errorMessage = 'Impossible de charger le dictionnaire.';
+      });
+    } finally {
+      if (mounted && generation == _requestGeneration) {
+        setState(() {
+          _loading = false;
+          _initialLoaded = true;
+        });
+      }
+    }
   }
 
   @override
@@ -113,36 +160,52 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                   itemBuilder: (context, index) {
                     final letter = String.fromCharCode(65 + index);
                     return ActionChip(
+                      key: Key('dictionary-letter-$letter'),
                       label: Text(letter),
+                      backgroundColor: _selectedLetter == letter
+                          ? Theme.of(context).colorScheme.secondaryContainer
+                          : null,
                       onPressed: () => _loadLetter(letter),
                     );
                   },
                 ),
               ),
-              if (_loading) const LinearProgressIndicator(),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: _results.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final entry = _results[index];
-                    return ListTile(
-                      title: Text(entry.title),
-                      subtitle: Text(
-                        entry.content,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => DictionaryDetailScreen(entry: entry),
-                        ),
-                      ),
-                    );
-                  },
+              if (_loading)
+                const LinearProgressIndicator(
+                  key: Key('dictionary-loading'),
                 ),
+              Expanded(
+                child: _errorMessage != null ||
+                        (!_loading && _initialLoaded && _results.isEmpty)
+                    ? Center(
+                        child: Text(
+                          _errorMessage ?? 'Aucun article trouvé.',
+                          key: const Key('dictionary-empty-message'),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: _results.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final entry = _results[index];
+                          return ListTile(
+                            title: Text(entry.title),
+                            subtitle: Text(
+                              entry.content,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    DictionaryDetailScreen(entry: entry),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
               ),
             ],
           );

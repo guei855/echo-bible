@@ -3,6 +3,7 @@ import 'package:echo_bible/core/database/bundled_database.dart';
 import 'package:echo_bible/core/resources/resource_descriptor.dart';
 import 'package:echo_bible/core/resources/resource_manager.dart';
 import 'package:echo_bible/features/bible/models/bible_book.dart';
+import 'package:echo_bible/features/bible/repositories/bible_version_repository.dart';
 import 'package:echo_bible/features/bible/screens/chapter_reader_screen.dart';
 import 'package:echo_bible/features/bible/screens/parallel_comparison_screen.dart';
 import 'package:echo_bible/features/dictionary/data/repository/dictionary_repository.dart';
@@ -23,6 +24,19 @@ import 'package:echo_bible/shared/widgets/empty_resource_state.dart';
 import 'package:echo_bible/shared/widgets/resource_install_card.dart';
 import 'package:flutter/material.dart';
 
+typedef StudyChapterLoader = Future<List<VerseStudyTarget>> Function(
+  int bookId,
+  int chapter,
+  int versionId,
+);
+typedef StudyBooksLoader = Future<List<BibleBook>> Function(int versionId);
+typedef StudyCrossReferenceLoader = Future<List<CrossReference>> Function(
+  int bookId,
+  int chapter,
+  int verse,
+  int versionId,
+);
+
 class VerseStudyTarget {
   final int verseId;
   final int verseNumber;
@@ -32,6 +46,18 @@ class VerseStudyTarget {
     required this.verseId,
     required this.verseNumber,
     required this.verseText,
+  });
+}
+
+class VerseStudyReference {
+  final BibleBook book;
+  final int chapter;
+  final VerseStudyTarget target;
+
+  const VerseStudyReference({
+    required this.book,
+    required this.chapter,
+    required this.target,
   });
 }
 
@@ -57,6 +83,11 @@ class VerseStudySheet extends StatefulWidget {
   final int? selectedTextStart;
   final int? selectedTextEnd;
   final Future<VerseStudyData> Function(int verseId)? loadStudy;
+  final StudyChapterLoader? loadChapter;
+  final StudyBooksLoader? loadBooks;
+  final StudyCrossReferenceLoader? loadReferences;
+  final VersionLoader? comparisonVersionLoader;
+  final ChapterLoader? comparisonChapterLoader;
 
   const VerseStudySheet({
     super.key,
@@ -71,6 +102,11 @@ class VerseStudySheet extends StatefulWidget {
     this.selectedTextStart,
     this.selectedTextEnd,
     this.loadStudy,
+    this.loadChapter,
+    this.loadBooks,
+    this.loadReferences,
+    this.comparisonVersionLoader,
+    this.comparisonChapterLoader,
   });
 
   static Future<void> show(
@@ -112,20 +148,31 @@ class VerseStudySheet extends StatefulWidget {
 
 class _VerseStudySheetState extends State<VerseStudySheet> {
   late int _index;
+  late List<VerseStudyTarget> _chapterVerses;
+  late VerseStudyReference _currentReference;
   VerseStudyTool _tool = VerseStudyTool.lexicon;
   late Future<VerseStudyData> _study;
+  int _navigationGeneration = 0;
+  bool _isInitialReference = true;
 
-  VerseStudyTarget get _verse => widget.verses[_index];
-  String get _reference =>
-      '${widget.book.name} ${widget.chapter}:${_verse.verseNumber}';
+  BibleBook get _book => _currentReference.book;
+  int get _chapter => _currentReference.chapter;
+  VerseStudyTarget get _verse => _currentReference.target;
+  String get _reference => '${_book.name} $_chapter:${_verse.verseNumber}';
 
   @override
   void initState() {
     super.initState();
-    final initialIndex = widget.verses.indexWhere(
+    _chapterVerses = widget.verses;
+    final initialIndex = _chapterVerses.indexWhere(
       (verse) => verse.verseNumber == widget.initialVerseNumber,
     );
     _index = initialIndex < 0 ? 0 : initialIndex;
+    _currentReference = VerseStudyReference(
+      book: widget.book,
+      chapter: widget.chapter,
+      target: _chapterVerses[_index],
+    );
     _study = _loadStudy();
   }
 
@@ -133,17 +180,95 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
       widget.loadStudy?.call(_verse.verseId) ??
       VerseStudyService.loadVerse(
         _verse.verseId,
-        selectedText: widget.selectedText,
+        selectedText: _isInitialReference ? widget.selectedText : null,
       );
 
-  void _move(int delta) {
+  Future<void> _move(int delta) async {
     final next = _index + delta;
-    if (next < 0 || next >= widget.verses.length) return;
+    if (next >= 0 && next < _chapterVerses.length) {
+      _setCurrentReference(_book, _chapter, next);
+      return;
+    }
+    await _moveAcrossChapter(delta);
+  }
+
+  void _setCurrentReference(BibleBook book, int chapter, int index) {
+    _navigationGeneration++;
     setState(() {
-      _index = next;
+      _index = index;
+      _currentReference = VerseStudyReference(
+        book: book,
+        chapter: chapter,
+        target: _chapterVerses[index],
+      );
+      _isInitialReference = false;
       _study = _loadStudy();
     });
   }
+
+  Future<void> _moveAcrossChapter(int delta) async {
+    var targetBook = _book;
+    var targetChapter = _chapter + delta;
+    if (targetChapter < 1 || targetChapter > targetBook.chaptersCount) {
+      final targetBookId = targetBook.id + delta;
+      if (targetBookId < 1 || targetBookId > 66) return;
+      final books = await (widget.loadBooks?.call(widget.versionId) ??
+          BibleVersionRepository.getBooks(versionId: widget.versionId));
+      if (!mounted) return;
+      final matches = books.where((book) => book.id == targetBookId);
+      if (matches.isEmpty) return;
+      targetBook = matches.first;
+      targetChapter = delta > 0 ? 1 : targetBook.chaptersCount;
+    }
+    final generation = ++_navigationGeneration;
+    final verses = await (widget.loadChapter?.call(
+          targetBook.id,
+          targetChapter,
+          widget.versionId,
+        ) ??
+        _loadChapter(targetBook.id, targetChapter));
+    if (!mounted || generation != _navigationGeneration || verses.isEmpty) {
+      return;
+    }
+    final index = delta > 0 ? 0 : verses.length - 1;
+    setState(() {
+      _chapterVerses = verses;
+      _index = index;
+      _currentReference = VerseStudyReference(
+        book: targetBook,
+        chapter: targetChapter,
+        target: verses[index],
+      );
+      _isInitialReference = false;
+      _study = _loadStudy();
+    });
+  }
+
+  Future<List<VerseStudyTarget>> _loadChapter(
+    int bookId,
+    int chapter,
+  ) async {
+    final rows = await BibleVersionRepository.getChapter(
+      bookId: bookId,
+      chapterNumber: chapter,
+      versionId: widget.versionId,
+    );
+    return rows
+        .map(
+          (row) => VerseStudyTarget(
+            verseId: row['id'] as int,
+            verseNumber: row['verse_number'] as int,
+            verseText: row['text'] as String? ?? '',
+          ),
+        )
+        .toList();
+  }
+
+  bool get _canMovePrevious => _index > 0 || _chapter > 1 || _book.id > 1;
+  bool get _canMoveNext =>
+      _index < _chapterVerses.length - 1 ||
+      _chapter < _book.chaptersCount ||
+      _book.id < 66;
 
   @override
   Widget build(BuildContext context) {
@@ -185,7 +310,8 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
                         ),
                         const SizedBox(height: 7),
                         Text(
-                          widget.selectedText?.isNotEmpty == true
+                          _isInitialReference &&
+                                  widget.selectedText?.isNotEmpty == true
                               ? '« ${widget.selectedText} »'
                               : _verse.verseText,
                           maxLines: 3,
@@ -252,16 +378,14 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
                 children: [
                   Expanded(
                     child: TextButton.icon(
-                      onPressed: _index == 0 ? null : () => _move(-1),
+                      onPressed: _canMovePrevious ? () => _move(-1) : null,
                       icon: const Icon(Icons.arrow_back_rounded),
                       label: const Text('Verset précédent'),
                     ),
                   ),
                   Expanded(
                     child: TextButton.icon(
-                      onPressed: _index == widget.verses.length - 1
-                          ? null
-                          : () => _move(1),
+                      onPressed: _canMoveNext ? () => _move(1) : null,
                       iconAlignment: IconAlignment.end,
                       icon: const Icon(Icons.arrow_forward_rounded),
                       label: const Text('Verset suivant'),
@@ -292,7 +416,9 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
 
   Widget _toolContent() => switch (_tool) {
         VerseStudyTool.concordance => _ConcordancePanel(
-            selectedText: widget.selectedText ?? _verse.verseText,
+            selectedText: _isInitialReference
+                ? widget.selectedText ?? _verse.verseText
+                : _verse.verseText,
           ),
         VerseStudyTool.lexicon => _LexiconPanel(
             study: _study,
@@ -300,30 +426,31 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
           ),
         VerseStudyTool.dictionary => const _DictionaryPanel(),
         VerseStudyTool.topics => _TopicsPanel(
-            bookId: widget.book.id,
-            chapter: widget.chapter,
+            bookId: _book.id,
+            chapter: _chapter,
             verse: _verse.verseNumber,
           ),
         VerseStudyTool.references => _ReferencesPanel(
-            book: widget.book,
-            chapter: widget.chapter,
+            book: _book,
+            chapter: _chapter,
             verse: _verse.verseNumber,
             versionId: widget.versionId,
+            loader: widget.loadReferences,
           ),
         VerseStudyTool.commentaries => _CommentaryPanel(
-            bookId: widget.book.id,
-            chapter: widget.chapter,
+            bookId: _book.id,
+            chapter: _chapter,
             verse: _verse.verseNumber,
             reference: _reference,
             verseText: _verse.verseText,
           ),
         VerseStudyTool.compare => _ComparisonPanel(
-            book: widget.book,
-            chapter: widget.chapter,
+            book: _book,
+            chapter: _chapter,
             verse: _verse.verseNumber,
-            verseEnd: widget.selectedVerseEnd,
-            selectedVerseStart: widget.selectedVerseStart,
             initialVersionId: widget.versionId,
+            versionLoader: widget.comparisonVersionLoader,
+            chapterLoader: widget.comparisonChapterLoader,
           ),
       };
 }
@@ -582,12 +709,14 @@ class _ReferencesPanel extends StatefulWidget {
   final int chapter;
   final int verse;
   final int versionId;
+  final StudyCrossReferenceLoader? loader;
 
   const _ReferencesPanel({
     required this.book,
     required this.chapter,
     required this.verse,
     required this.versionId,
+    this.loader,
   });
 
   @override
@@ -596,6 +725,7 @@ class _ReferencesPanel extends StatefulWidget {
 
 class _ReferencesPanelState extends State<_ReferencesPanel> {
   late Future<List<CrossReference>> _references;
+  int _requestGeneration = 0;
 
   @override
   void initState() {
@@ -603,12 +733,35 @@ class _ReferencesPanelState extends State<_ReferencesPanel> {
     _reload();
   }
 
+  @override
+  void didUpdateWidget(covariant _ReferencesPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.book.id != widget.book.id ||
+        oldWidget.chapter != widget.chapter ||
+        oldWidget.verse != widget.verse ||
+        oldWidget.versionId != widget.versionId) {
+      setState(_reload);
+    }
+  }
+
   void _reload() {
-    _references = const CrossReferenceRepository().forVerse(
-      widget.book.id,
-      widget.chapter,
-      widget.verse,
-      versionId: widget.versionId,
+    final generation = ++_requestGeneration;
+    final request = widget.loader?.call(
+          widget.book.id,
+          widget.chapter,
+          widget.verse,
+          widget.versionId,
+        ) ??
+        const CrossReferenceRepository().forVerse(
+          widget.book.id,
+          widget.chapter,
+          widget.verse,
+          versionId: widget.versionId,
+        );
+    _references = request.then(
+      (references) => generation == _requestGeneration
+          ? references
+          : const <CrossReference>[],
     );
   }
 
@@ -783,25 +936,27 @@ class _ComparisonPanel extends StatelessWidget {
   final BibleBook book;
   final int chapter;
   final int verse;
-  final int? verseEnd;
-  final int? selectedVerseStart;
   final int initialVersionId;
+  final VersionLoader? versionLoader;
+  final ChapterLoader? chapterLoader;
 
   const _ComparisonPanel({
     required this.book,
     required this.chapter,
     required this.verse,
-    this.verseEnd,
-    this.selectedVerseStart,
     required this.initialVersionId,
+    this.versionLoader,
+    this.chapterLoader,
   });
 
   @override
   Widget build(BuildContext context) => PassageComparisonView(
         bookId: book.id,
         chapter: chapter,
-        verseStart: selectedVerseStart ?? verse,
-        verseEnd: verseEnd ?? selectedVerseStart ?? verse,
+        verseStart: verse,
+        verseEnd: verse,
         initialVersionId: initialVersionId,
+        versionLoader: versionLoader,
+        chapterLoader: chapterLoader,
       );
 }
