@@ -1,0 +1,63 @@
+{
+  "resource": "Dictionnaire de la Bible",
+  "director": "Fulcran Vigouroux",
+  "publisher": "Letouzey et Ané",
+  "edition_range": "1895-1912",
+  "retrieved_or_verified_on": "2026-08-13",
+  "source_credit": "Gallica via Wikimedia Commons and Wikisource",
+  "scan_rights": "Public domain; Wikimedia Commons Public Domain Mark",
+  "transcription_license": "CC BY-SA 4.0",
+  "download_status": "downloaded_and_verified",
+  "volumes": [
+    {
+      "volume": "I",
+      "range": "A-B",
+      "file": "Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_I.djvu",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/f/f6/Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_I.djvu",
+      "description_url": "https://commons.wikimedia.org/wiki/File:Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_I.djvu",
+      "bytes": 65927571,
+      "pages": 1054,
+      "sha1": "8b09fd5e8544a9559d295412757cc482f13d6194"
+    },
+    {
+      "volume": "II",
+      "range": "C-F",
+      "file": "Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_II.djvu",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e7/Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_II.djvu",
+      "description_url": "https://commons.wikimedia.org/wiki/File:Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_II.djvu",
+      "bytes": 71916968,
+      "pages": 1254,
+      "sha1": "099994098869f0c658fd499f596d46858696054d"
+    },
+    {
+      "volume": "III",
+      "range": "G-K",
+      "file": "Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_III.djvu",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/88/Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_III.djvu",
+      "description_url": "https://commons.wikimedia.org/wiki/File:Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_III.djvu",
+      "bytes": 62125174,
+      "pages": 987,
+      "sha1": "0660c97b03fb30a68678ce33c47005249e346a97"
+    },
+    {
+      "volume": "IV",
+      "range": "L-PA",
+      "file": "Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_IV.djvu",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/84/Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_IV.djvu",
+      "description_url": "https://commons.wikimedia.org/wiki/File:Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_IV.djvu",
+      "bytes": 71678921,
+      "pages": 1154,
+      "sha1": "ba66b4868ca37a2755471acda1c229d29c408fcf"
+    },
+    {
+      "volume": "V",
+      "range": "PE-Z",
+      "file": "Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_V.djvu",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e2/Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_V.djvu",
+      "description_url": "https://commons.wikimedia.org/wiki/File:Dictionnaire_de_la_Bible_-_F._Vigouroux_-_Tome_V.djvu",
+      "bytes": 73576454,
+      "pages": 1307,
+      "sha1": "a1072cfcc6ecfc194e719729149dabdbd3ac0e82"
+    }
+  ]
+}
