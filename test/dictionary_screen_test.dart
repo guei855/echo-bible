@@ -18,7 +18,8 @@ void main() {
         home: DictionaryScreen(availability: Future<bool>.value(false)),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump();
 
     expect(find.text('Dictionnaire biblique'), findsOneWidget);
     expect(find.text('Dictionnaire biblique français'), findsOneWidget);
@@ -35,9 +36,10 @@ void main() {
         home: DictionaryScreen(availability: Future<bool>.value(true)),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump();
 
-    expect(find.text('Rechercher un article'), findsOneWidget);
+    expect(find.text('Rechercher un mot…'), findsOneWidget);
     expect(find.text('Ressource en préparation'), findsNothing);
   });
 }

@@ -1,0 +1,14 @@
+{
+  "entries": 786,
+  "aliases": 4,
+  "fts5": true,
+  "bytes": 9015296,
+  "sha256": "154b6617bbf5f52323952a79da09dc88a484de0170407818f7f8d5fdc6231928",
+  "integrity_check": "ok",
+  "category_members": 780,
+  "wikisource_articles_fetched": 780,
+  "wikisource_entries_retained": 778,
+  "djvu_complements_defined": 8,
+  "djvu_complements_retained": 8,
+  "output": "release_resources\\fr\\dictionaries\\vigouroux_dictionary.db"
+}

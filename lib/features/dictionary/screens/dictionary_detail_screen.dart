@@ -20,7 +20,20 @@ class DictionaryDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            [entry.author, entry.source]
+            'Dictionnaire de la Bible\nSous la direction de F. Vigouroux',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            [
+              entry.source,
+              if (entry.volume != null) 'Tome ${entry.volume}',
+              if (entry.pageReference != null) 'p. ${entry.pageReference}',
+              entry.sourceKind == 'wikisource_transcription'
+                  ? 'Transcription Wikisource'
+                  : 'Couche texte du fac-similé DjVu',
+              entry.quality,
+            ]
                 .whereType<String>()
                 .where((value) => value.trim().isNotEmpty)
                 .join(' · '),

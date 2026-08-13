@@ -37,6 +37,7 @@ migrate_working_dir/
 
 # Large generated/downloaded resources are published separately as release assets.
 /release_resources/**/*.db
+/bible_builder/sources/dictionary/vigouroux/cache/
 /bible_builder/backups/
 /bible_builder/sources/dictionary/vigouroux/*.djvu
 

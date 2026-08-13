@@ -103,6 +103,24 @@
       "releasePath": "fr/nave/nave_fr.db",
       "sourceUrl": "https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave",
       "license": "CC BY-SA 4.0 (French translation layer)"
+    },
+    {
+      "id": "dictionary",
+      "language": "fr",
+      "category": "dictionary",
+      "name": "Dictionnaire biblique français",
+      "shortName": "Vigouroux",
+      "version": "1.0.0",
+      "sizeBytes": 9015296,
+      "sha256": "154b6617bbf5f52323952a79da09dc88a484de0170407818f7f8d5fdc6231928",
+      "localFileName": "vigouroux_dictionary.db",
+      "releasePath": "fr/dictionaries/vigouroux_dictionary.db",
+      "source": "Dictionnaire de la Bible — F. Vigouroux / Wikisource / Gallica",
+      "attribution": "Dictionnaire de la Bible, sous la direction de F. Vigouroux ; transcription Wikisource et fac-similés Gallica/Wikimedia Commons",
+      "sourceUrl": "https://fr.wikisource.org/wiki/Dictionnaire_de_la_Bible",
+      "license": "Domaine public ; transcription Wikisource CC BY-SA 4.0",
+      "status": "available",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.1.0-resources/vigouroux_dictionary.db"
     }
   ]
 }
