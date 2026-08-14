@@ -2,6 +2,8 @@ import 'package:echo_bible/core/database/study_document_schema.dart';
 import 'package:echo_bible/features/study/models/personal_study.dart';
 import 'package:echo_bible/features/study/services/personal_study_service.dart';
 import 'package:echo_bible/features/study/services/study_export_service.dart';
+import 'package:echo_bible/features/study/services/study_rich_text_codec.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -230,5 +232,58 @@ void main() {
     final reopened = await repository.load(created.id);
     expect(reopened!.blocks.single.payload, payload);
     expect(reopened.content, 'Foi');
+  });
+
+  test('rouvre dans le même ordre les blocs insérés au curseur', () async {
+    final db = await openStudyDatabase();
+    addTearDown(db.close);
+    final repository =
+        PersonalStudyRepository(databaseProvider: () async => db);
+    final now = DateTime(2026, 8, 14);
+    final source = StudyBlock(
+      id: 'rich-order',
+      type: StudyBlockType.text,
+      position: 0,
+      payload: const {
+        'format': 'quill_delta_v1',
+        'delta': [
+          {'insert': 'Texte A\nTexte B\nTexte C\n'},
+        ],
+      },
+      createdAt: now,
+      updatedAt: now,
+    );
+    final verse = StudyRichTextCodec.insertAtSelection(
+      blocks: [source],
+      richBlockId: source.id,
+      selection: const TextSelection.collapsed(offset: 8),
+      type: StudyBlockType.verse,
+      payload: const {'reference': 'Jean 3:16', 'text': 'Car Dieu…'},
+      now: now,
+      idSeed: 'verse-order',
+    );
+    final strong = StudyRichTextCodec.insertAtSelection(
+      blocks: verse.blocks,
+      richBlockId: verse.continuationBlockId,
+      selection: const TextSelection.collapsed(offset: 8),
+      type: StudyBlockType.strong,
+      payload: const {
+        'code': 'G3056',
+        'originalWord': 'λόγος',
+        'definition': 'Parole',
+      },
+      now: now.add(const Duration(seconds: 1)),
+      idSeed: 'strong-order',
+    );
+    final created = await repository.create(initialBlocks: strong.blocks);
+
+    final reopened = await repository.load(created.id);
+    expect(reopened!.blocks.map((block) => block.plainText), [
+      'Texte A',
+      'Jean 3:16\nCar Dieu…',
+      'Texte B',
+      'G3056 λόγος\nParole',
+      'Texte C',
+    ]);
   });
 }

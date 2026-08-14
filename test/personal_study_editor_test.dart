@@ -228,13 +228,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(focusNode!.hasFocus, isTrue);
 
-    await tester.tap(find.byKey(const Key('rich-more')));
-    await tester.pumpAndSettle();
-    expect(focusNode!.hasFocus, isTrue);
-    await tester.tap(find.text('Barr\u00e9'));
-    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('rich-more')), findsNothing);
+    final toolbarScroll = tester.widget<SingleChildScrollView>(
+      find.byKey(const Key('study-toolbar-horizontal-scroll')),
+    );
+    toolbarScroll.controller!.jumpTo(240);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('rich-strike')));
+    await tester.pump();
     expect(focusNode!.hasFocus, isTrue);
 
+    toolbarScroll.controller!.jumpTo(
+      toolbarScroll.controller!.position.maxScrollExtent,
+    );
+    await tester.pump();
     await tester.tap(find.byKey(const Key('insert-study-block')));
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsOneWidget);
@@ -245,6 +252,138 @@ void main() {
       controller!.selection,
       const TextSelection(baseOffset: 0, extentOffset: 12),
     );
+  });
+
+  testWidgets('toolbar horizontale complète reste accessible avec clavier',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final now = DateTime.now();
+    final study = PersonalStudy(
+      id: 8,
+      title: 'Toolbar',
+      blocks: [
+        StudyBlock(
+          id: 'rich-toolbar',
+          type: StudyBlockType.text,
+          position: 0,
+          payload: const {
+            'format': 'quill_delta_v1',
+            'delta': [
+              {'insert': 'Texte\n'},
+            ],
+          },
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ],
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.pumpWidget(app(PersonalStudyEditorScreen(
+      study: study,
+      saveDocument: (_) async {},
+    )));
+
+    expect(find.byKey(const Key('rich-style')), findsOneWidget);
+    expect(find.byKey(const Key('rich-bold')), findsOneWidget);
+    expect(find.byKey(const Key('rich-italic')), findsOneWidget);
+    expect(find.byKey(const Key('rich-underline')), findsOneWidget);
+    expect(find.byKey(const Key('rich-more')), findsNothing);
+    expect(find.byKey(const Key('study-toolbar-ime-padding')), findsOneWidget);
+
+    final scroll = tester.widget<SingleChildScrollView>(
+      find.byKey(const Key('study-toolbar-horizontal-scroll')),
+    );
+    expect(scroll.scrollDirection, Axis.horizontal);
+    scroll.controller!.jumpTo(scroll.controller!.position.maxScrollExtent);
+    await tester.pump();
+    expect(find.byKey(const Key('hide-study-keyboard')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    scroll.controller!.jumpTo(0);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('rich-style')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('study-secondary-menu-scrollable')),
+      findsOneWidget,
+    );
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sélection mémorisée insère via menu et place le focus après',
+      (tester) async {
+    final now = DateTime.now();
+    QuillController? activeController;
+    FocusNode? activeFocus;
+    PersonalStudy? saved;
+    final study = PersonalStudy(
+      id: 9,
+      title: 'Insertion',
+      blocks: [
+        StudyBlock(
+          id: 'rich-insertion',
+          type: StudyBlockType.text,
+          position: 0,
+          payload: const {
+            'format': 'quill_delta_v1',
+            'delta': [
+              {'insert': 'AAA\nBBB\n'},
+            ],
+          },
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ],
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.pumpWidget(app(PersonalStudyEditorScreen(
+      study: study,
+      autosaveDelay: const Duration(milliseconds: 20),
+      onActiveController: (controller) => activeController = controller,
+      onActiveFocusNode: (focusNode) => activeFocus = focusNode,
+      saveDocument: (value) async => saved = value,
+    )));
+    activeController!.updateSelection(
+      const TextSelection.collapsed(offset: 4),
+      ChangeSource.local,
+    );
+    final toolbarScroll = tester.widget<SingleChildScrollView>(
+      find.byKey(const Key('study-toolbar-horizontal-scroll')),
+    );
+    toolbarScroll.controller!.jumpTo(
+      toolbarScroll.controller!.position.maxScrollExtent,
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('insert-study-block')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Séparateur'),
+      180,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('study-insert-menu-scrollable')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.text('Séparateur'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 30));
+
+    expect(saved!.blocks.map((block) => block.plainText), [
+      'AAA',
+      '────────',
+      'BBB',
+    ]);
+    expect(
+        activeController!.selection, const TextSelection.collapsed(offset: 0));
+    expect(activeFocus!.hasFocus, isTrue);
   });
 
   testWidgets('snackbar temporaire et annulation de suppression',

@@ -45,4 +45,45 @@ void main() {
       expect(studied, isTrue);
     });
   }
+
+  testWidgets('favori change immédiatement et reste actif au rechargement',
+      (tester) async {
+    var persisted = false;
+
+    Widget favoriteApp() => MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) => Scaffold(
+              bottomNavigationBar: VerseSelectionActionBar(
+                selectionCount: 1,
+                isFavorite: persisted,
+                onHighlight: () {},
+                onUnderline: () {},
+                onNote: () {},
+                onFavorite: () => setState(() => persisted = !persisted),
+                onCopy: () {},
+                onShare: () {},
+                onStudy: () {},
+              ),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(favoriteApp());
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+    await tester.tap(
+      find.byKey(const Key('selected-verses-favorite-action')),
+    );
+    await tester.pump();
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(favoriteApp());
+    expect(find.byIcon(Icons.favorite), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('selected-verses-favorite-action')),
+    );
+    await tester.pump();
+    expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+  });
 }

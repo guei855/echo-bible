@@ -1,4 +1,5 @@
 import 'package:echo_bible/features/study/models/personal_study.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 
 class StudyRichTextCodec {
@@ -34,6 +35,99 @@ class StudyRichTextCodec {
         'format': format,
         'delta': document.toDelta().toJson(),
       };
+
+  /// Inserts a structured block after the real Quill selection. When text is
+  /// selected, [selection.end] is deliberately used so selected text is never
+  /// deleted. The rich block is split and an empty/remaining rich block after
+  /// the resource receives the caret on the next frame.
+  static StudyBlockInsertionResult insertAtSelection({
+    required List<StudyBlock> blocks,
+    required String richBlockId,
+    required TextSelection selection,
+    required StudyBlockType type,
+    required Map<String, Object?> payload,
+    required DateTime now,
+    required String idSeed,
+  }) {
+    final sourceIndex = blocks.indexWhere((block) => block.id == richBlockId);
+    if (sourceIndex < 0 || !isRichText(blocks[sourceIndex])) {
+      final fallback = [...blocks];
+      final resource = StudyBlock(
+        id: '$idSeed-resource',
+        type: type,
+        position: fallback.length,
+        payload: payload,
+        createdAt: now,
+        updatedAt: now,
+      );
+      final continuation = emptyBlock(now, position: fallback.length + 1)
+          .copyWith(updatedAt: now);
+      fallback.addAll([resource, continuation]);
+      return StudyBlockInsertionResult(
+        blocks: _withPositions(fallback),
+        insertedBlockId: resource.id,
+        continuationBlockId: continuation.id,
+      );
+    }
+
+    final source = blocks[sourceIndex];
+    final delta = documentFromBlock(source).toDelta();
+    final documentLength = delta.operations.fold<int>(
+      0,
+      (length, operation) => length + (operation.length ?? 0),
+    );
+    final maxContentOffset = (documentLength - 1).clamp(0, documentLength);
+    final requestedOffset =
+        selection.isValid ? selection.end : maxContentOffset;
+    final offset = requestedOffset.clamp(0, maxContentOffset);
+    final beforeDelta = _validDocumentDelta(delta.slice(0, offset));
+    final afterDelta = _validDocumentDelta(delta.slice(offset));
+
+    StudyBlock richPart(String suffix, dynamic part, int position) =>
+        StudyBlock(
+          id: '$idSeed-$suffix',
+          type: StudyBlockType.text,
+          position: position,
+          payload: {
+            'format': format,
+            'delta': part.toJson(),
+          },
+          createdAt: source.createdAt,
+          updatedAt: now,
+        );
+
+    final before = richPart('before', beforeDelta, sourceIndex);
+    final resource = StudyBlock(
+      id: '$idSeed-resource',
+      type: type,
+      position: sourceIndex + 1,
+      payload: payload,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final continuation = richPart('after', afterDelta, sourceIndex + 2);
+    final result = [...blocks]
+      ..removeAt(sourceIndex)
+      ..insertAll(sourceIndex, [before, resource, continuation]);
+    return StudyBlockInsertionResult(
+      blocks: _withPositions(result),
+      insertedBlockId: resource.id,
+      continuationBlockId: continuation.id,
+    );
+  }
+
+  static dynamic _validDocumentDelta(dynamic delta) {
+    final lastData = delta.isEmpty ? null : delta.operations.last.data;
+    if (lastData is! String || !lastData.endsWith('\n')) {
+      delta.insert('\n');
+    }
+    return delta;
+  }
+
+  static List<StudyBlock> _withPositions(List<StudyBlock> blocks) => [
+        for (var index = 0; index < blocks.length; index++)
+          blocks[index].copyWith(position: index),
+      ];
 
   static List<Map<String, dynamic>> deltaForLegacyBlock(StudyBlock block) {
     final operations = <Map<String, dynamic>>[];
@@ -193,4 +287,16 @@ class StudyRichTextCodec {
       operations.add({'insert': source.substring(offset)});
     }
   }
+}
+
+class StudyBlockInsertionResult {
+  const StudyBlockInsertionResult({
+    required this.blocks,
+    required this.insertedBlockId,
+    required this.continuationBlockId,
+  });
+
+  final List<StudyBlock> blocks;
+  final String insertedBlockId;
+  final String continuationBlockId;
 }

@@ -1,5 +1,6 @@
 import 'package:echo_bible/features/study/models/personal_study.dart';
 import 'package:echo_bible/features/study/services/study_rich_text_codec.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -74,5 +75,92 @@ void main() {
         greaterThan(10000));
     expect(
         StudyRichTextCodec.plainTextFromPayload(payload), startsWith('mot0 '));
+  });
+
+  test('insère Jean 3:16 exactement entre AAA et BBB', () {
+    final now = DateTime(2026, 8, 14);
+    final source = StudyBlock(
+      id: 'source',
+      type: StudyBlockType.text,
+      position: 0,
+      payload: const {
+        'format': 'quill_delta_v1',
+        'delta': [
+          {'insert': 'AAA\nBBB\n'},
+        ],
+      },
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    final result = StudyRichTextCodec.insertAtSelection(
+      blocks: [source],
+      richBlockId: source.id,
+      selection: const TextSelection.collapsed(offset: 4),
+      type: StudyBlockType.verse,
+      payload: const {'reference': 'Jean 3:16', 'text': 'Car Dieu…'},
+      now: now,
+      idSeed: 'insert-1',
+    );
+
+    expect(result.blocks.map((block) => block.plainText), [
+      'AAA',
+      'Jean 3:16\nCar Dieu…',
+      'BBB',
+    ]);
+    expect(result.blocks.map((block) => block.position), [0, 1, 2]);
+  });
+
+  test('deux insertions conservent ordre, identités et sélection', () {
+    final now = DateTime(2026, 8, 14);
+    final source = StudyBlock(
+      id: 'source',
+      type: StudyBlockType.text,
+      position: 0,
+      payload: const {
+        'format': 'quill_delta_v1',
+        'delta': [
+          {'insert': 'AAA\nBBB\nCCC\n'},
+        ],
+      },
+      createdAt: now,
+      updatedAt: now,
+    );
+    final first = StudyRichTextCodec.insertAtSelection(
+      blocks: [source],
+      richBlockId: source.id,
+      selection: const TextSelection.collapsed(offset: 4),
+      type: StudyBlockType.verse,
+      payload: const {'reference': 'Genèse 1:1', 'text': 'Au commencement…'},
+      now: now,
+      idSeed: 'genesis',
+    );
+    final second = StudyRichTextCodec.insertAtSelection(
+      blocks: first.blocks,
+      richBlockId: first.continuationBlockId,
+      selection: const TextSelection(baseOffset: 0, extentOffset: 4),
+      type: StudyBlockType.strong,
+      payload: const {
+        'code': 'G3056',
+        'originalWord': 'λόγος',
+        'definition': 'Parole',
+      },
+      now: now.add(const Duration(seconds: 1)),
+      idSeed: 'logos',
+    );
+
+    expect(second.blocks.map((block) => block.plainText), [
+      'AAA',
+      'Genèse 1:1\nAu commencement…',
+      'BBB',
+      'G3056 λόγος\nParole',
+      'CCC',
+    ]);
+    expect(second.blocks.map((block) => block.id).toSet().length,
+        second.blocks.length);
+    expect(
+      StudyRichTextCodec.documentFromBlock(second.blocks.last).toPlainText(),
+      'CCC\n',
+    );
   });
 }

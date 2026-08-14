@@ -11,6 +11,7 @@ class VerseSelectionActionBar extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onStudy;
   final VoidCallback? onAddToStudy;
+  final bool isFavorite;
 
   const VerseSelectionActionBar({
     super.key,
@@ -23,6 +24,7 @@ class VerseSelectionActionBar extends StatelessWidget {
     required this.onShare,
     required this.onStudy,
     this.onAddToStudy,
+    this.isFavorite = false,
   });
 
   @override
@@ -63,7 +65,8 @@ class VerseSelectionActionBar extends StatelessWidget {
                   ),
                   Expanded(
                     child: _SelectionAction(
-                      icon: Icons.favorite_border_rounded,
+                      key: const Key('selected-verses-favorite-action'),
+                      icon: isFavorite ? Icons.favorite : Icons.favorite_border,
                       label: 'Favoris',
                       onTap: onFavorite,
                     ),
@@ -125,6 +128,7 @@ class _SelectionAction extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _SelectionAction({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,

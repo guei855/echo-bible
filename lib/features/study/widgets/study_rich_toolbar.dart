@@ -20,8 +20,8 @@ class StudyRichToolbar extends StatefulWidget {
 
   final QuillController controller;
   final FocusNode focusNode;
-  final Future<void> Function() onInsert;
-  final VoidCallback onDivider;
+  final Future<void> Function(TextSelection selection) onInsert;
+  final ValueChanged<TextSelection> onDivider;
   final VoidCallback onHideKeyboard;
   final VoidCallback onUndoBlocks;
   final VoidCallback onRedoBlocks;
@@ -45,6 +45,20 @@ class _StudyRichToolbarState extends State<StudyRichToolbar> {
     'note': 'Note personnelle',
     'quote': 'Citation',
   };
+  static const _palette = <String, Color>{
+    '#111827': Color(0xFF111827),
+    '#1E3A8A': Color(0xFF1E3A8A),
+    '#B91C1C': Color(0xFFB91C1C),
+    '#047857': Color(0xFF047857),
+    '#7E22CE': Color(0xFF7E22CE),
+    '#FFF59D': Color(0xFFFFF59D),
+    '#BBF7D0': Color(0xFFBBF7D0),
+    '#BFDBFE': Color(0xFFBFDBFE),
+    '#FBCFE8': Color(0xFFFBCFE8),
+    '#FED7AA': Color(0xFFFED7AA),
+  };
+
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -63,6 +77,7 @@ class _StudyRichToolbarState extends State<StudyRichToolbar> {
   @override
   void dispose() {
     widget.controller.removeListener(_refresh);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -78,65 +93,109 @@ class _StudyRichToolbarState extends State<StudyRichToolbar> {
       color: colors.surface,
       child: SizedBox(
         height: StudyRichToolbar.height,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-          child: Row(
-            children: [
-              Builder(
-                builder: (anchor) => TextButton(
+        child: Scrollbar(
+          controller: _scrollController,
+          scrollbarOrientation: ScrollbarOrientation.bottom,
+          child: SingleChildScrollView(
+            key: const Key('study-toolbar-horizontal-scroll'),
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(7, 4, 7, 6),
+            child: Row(
+              children: [
+                TextButton(
                   key: const Key('rich-style'),
-                  onPressed: () => _showStyles(anchor),
+                  onPressed: _showStyles,
                   child: const Text('Style'),
                 ),
-              ),
-              _toggleButton(
-                Attribute.bold,
-                Icons.format_bold,
-                'Gras',
-                'rich-bold',
-              ),
-              _toggleButton(
-                Attribute.italic,
-                Icons.format_italic,
-                'Italique',
-                'rich-italic',
-              ),
-              _toggleButton(
-                Attribute.underline,
-                Icons.format_underlined,
-                'Souligné',
-                'rich-underline',
-              ),
-              Builder(
-                builder: (anchor) => IconButton(
-                  key: const Key('rich-more'),
-                  tooltip: 'Plus de formats',
-                  onPressed: () => _showMore(anchor),
-                  icon: const Icon(Icons.more_horiz),
+                _toggleButton(
+                    Attribute.bold, Icons.format_bold, 'Gras', 'rich-bold'),
+                _toggleButton(Attribute.italic, Icons.format_italic, 'Italique',
+                    'rich-italic'),
+                _toggleButton(Attribute.underline, Icons.format_underlined,
+                    'Souligné', 'rich-underline'),
+                _toggleButton(Attribute.strikeThrough,
+                    Icons.format_strikethrough, 'Barré', 'rich-strike'),
+                _actionButton(
+                    Icons.format_size, 'Taille', 'rich-size', _showSizes),
+                _actionButton(Icons.format_color_text, 'Couleur du texte',
+                    'rich-color', () => _showPalette(background: false)),
+                _actionButton(Icons.format_color_fill, 'Surlignage',
+                    'rich-highlight', () => _showPalette(background: true)),
+                _actionButton(Icons.format_align_left, 'Alignement',
+                    'rich-alignment', _showAlignments),
+                _toggleButton(Attribute.blockQuote, Icons.format_quote,
+                    'Citation', 'rich-quote'),
+                _toggleButton(Attribute.ul, Icons.format_list_bulleted,
+                    'Liste à puces', 'rich-bullets'),
+                _toggleButton(Attribute.ol, Icons.format_list_numbered,
+                    'Liste numérotée', 'rich-numbering'),
+                _actionButton(
+                    Icons.format_indent_decrease,
+                    'Retrait -',
+                    'rich-indent-decrease',
+                    () => _applyToSelection((c) => c.indentSelection(false))),
+                _actionButton(
+                    Icons.format_indent_increase,
+                    'Retrait +',
+                    'rich-indent-increase',
+                    () => _applyToSelection((c) => c.indentSelection(true))),
+                _actionButton(
+                  Icons.horizontal_rule,
+                  'Séparateur',
+                  'rich-divider',
+                  () => widget.onDivider(_captureSelection()),
                 ),
-              ),
-              IconButton(
-                key: const Key('insert-study-block'),
-                tooltip: 'Insérer une ressource',
-                onPressed: _insert,
-                icon: const Icon(
-                  Icons.add_circle_outline,
-                  color: AppColors.primary,
+                _actionButton(
+                  Icons.undo,
+                  'Annuler',
+                  'rich-undo',
+                  _undo,
+                  enabled: widget.controller.hasUndo || widget.canUndoBlocks,
                 ),
-              ),
-              IconButton(
-                key: const Key('hide-study-keyboard'),
-                tooltip: 'Masquer le clavier',
-                onPressed: widget.onHideKeyboard,
-                icon: const Icon(Icons.keyboard_hide),
-              ),
-            ],
+                _actionButton(
+                  Icons.redo,
+                  'Rétablir',
+                  'rich-redo',
+                  _redo,
+                  enabled: widget.controller.hasRedo || widget.canRedoBlocks,
+                ),
+                IconButton(
+                  key: const Key('insert-study-block'),
+                  tooltip: 'Insérer une ressource',
+                  onPressed: _insert,
+                  icon: const Icon(
+                    Icons.add_circle_outline,
+                    color: AppColors.primary,
+                  ),
+                ),
+                IconButton(
+                  key: const Key('hide-study-keyboard'),
+                  tooltip: 'Masquer le clavier',
+                  onPressed: widget.onHideKeyboard,
+                  icon: const Icon(Icons.keyboard_hide),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  Widget _actionButton(
+    IconData icon,
+    String tooltip,
+    String keyName,
+    VoidCallback action, {
+    bool enabled = true,
+  }) =>
+      IconButton(
+        key: Key(keyName),
+        tooltip: tooltip,
+        onPressed: enabled ? action : null,
+        icon: Icon(icon),
+      );
 
   Widget _toggleButton(
     Attribute attribute,
@@ -144,11 +203,7 @@ class _StudyRichToolbarState extends State<StudyRichToolbar> {
     String tooltip,
     String keyName,
   ) {
-    final active = widget.controller
-            .getSelectionStyle()
-            .attributes[attribute.key]
-            ?.value ==
-        attribute.value;
+    final active = _isActive(attribute);
     return IconButton(
       key: Key(keyName),
       tooltip: tooltip,
@@ -158,16 +213,17 @@ class _StudyRichToolbarState extends State<StudyRichToolbar> {
             )
           : null,
       onPressed: () => _applyToSelection((controller) {
-        final selected =
-            controller.getSelectionStyle().attributes[attribute.key]?.value ==
-                attribute.value;
         controller.formatSelection(
-          selected ? Attribute.clone(attribute, null) : attribute,
+          _isActive(attribute) ? Attribute.clone(attribute, null) : attribute,
         );
       }),
       icon: Icon(icon),
     );
   }
+
+  bool _isActive(Attribute attribute) =>
+      widget.controller.getSelectionStyle().attributes[attribute.key]?.value ==
+      attribute.value;
 
   TextSelection _captureSelection() => widget.controller.selection;
 
@@ -187,44 +243,69 @@ class _StudyRichToolbarState extends State<StudyRichToolbar> {
     _restoreSelection(selection);
   }
 
-  Future<T?> _showAnchored<T>(
-    BuildContext anchor,
-    List<PopupMenuEntry<T>> items,
-  ) {
-    return _showAt<T>(_menuPosition(anchor), items);
-  }
+  Future<T?> _showCompactDialog<T>({
+    required String title,
+    required Widget Function(BuildContext dialogContext) content,
+  }) =>
+      showDialog<T>(
+        context: context,
+        requestFocus: false,
+        builder: (dialogContext) {
+          final media = MediaQuery.of(dialogContext);
+          return AnimatedPadding(
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              24 + media.viewInsets.bottom,
+            ),
+            duration: const Duration(milliseconds: 120),
+            child: Dialog(
+              insetPadding: EdgeInsets.zero,
+              child: ConstrainedBox(
+                key: const Key('study-secondary-menu-scrollable'),
+                constraints: BoxConstraints(
+                  maxWidth: 360,
+                  maxHeight: (media.size.height -
+                          media.viewInsets.bottom -
+                          media.padding.vertical -
+                          48)
+                      .clamp(120, 520),
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(title,
+                          style: Theme.of(dialogContext).textTheme.titleMedium),
+                      const SizedBox(height: 12),
+                      content(dialogContext),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
 
-  RelativeRect _menuPosition(BuildContext anchor) {
-    final button = anchor.findRenderObject()! as RenderBox;
-    final overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final origin = button.localToGlobal(Offset.zero, ancestor: overlay);
-    return RelativeRect.fromRect(
-      origin & button.size,
-      Offset.zero & overlay.size,
-    );
-  }
-
-  Future<T?> _showAt<T>(
-    RelativeRect position,
-    List<PopupMenuEntry<T>> items,
-  ) {
-    return showMenu<T>(
-      context: context,
-      requestFocus: false,
-      position: position,
-      items: items,
-    );
-  }
-
-  Future<void> _showStyles(BuildContext anchor) async {
+  Future<void> _showStyles() async {
     final selection = _captureSelection();
-    final choice = await _showAnchored<String>(
-      anchor,
-      [
-        for (final item in _styles.entries)
-          PopupMenuItem(value: item.key, child: Text(item.value)),
-      ],
+    final choice = await _showCompactDialog<String>(
+      title: 'Style',
+      content: (dialogContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final item in _styles.entries)
+            ListTile(
+              dense: true,
+              title: Text(item.value),
+              onTap: () => Navigator.pop(dialogContext, item.key),
+            ),
+        ],
+      ),
     );
     if (!mounted) return;
     _restoreSelection(selection);
@@ -277,100 +358,27 @@ class _StudyRichToolbarState extends State<StudyRichToolbar> {
     }
   }
 
-  Future<void> _showMore(BuildContext anchor) async {
+  Future<void> _showSizes() async {
     final selection = _captureSelection();
-    final position = _menuPosition(anchor);
-    final action = await _showAt<String>(position, [
-      _item('strike', Icons.format_strikethrough, 'Barré'),
-      _item('size', Icons.format_size, 'Taille'),
-      _item('color', Icons.format_color_text, 'Couleur texte'),
-      _item('highlight', Icons.highlight, 'Surlignage'),
-      _item('quote', Icons.format_quote, 'Citation'),
-      _item('bullet', Icons.format_list_bulleted, 'Puces'),
-      _item('number', Icons.format_list_numbered, 'Numérotation'),
-      _item('indent+', Icons.format_indent_increase, 'Retrait +'),
-      _item('indent-', Icons.format_indent_decrease, 'Retrait -'),
-      _item('align', Icons.format_align_left, 'Alignement'),
-      _item('divider', Icons.horizontal_rule, 'Séparateur'),
-      _item('undo', Icons.undo, 'Annuler'),
-      _item('redo', Icons.redo, 'Rétablir'),
-    ]);
-    if (!mounted) return;
-    _restoreSelection(selection);
-    switch (action) {
-      case 'strike':
-        _toggle(Attribute.strikeThrough);
-      case 'size':
-        await _showSizes(position, selection);
-      case 'color':
-        await _showPalette(position, selection, background: false);
-      case 'highlight':
-        await _showPalette(position, selection, background: true);
-      case 'quote':
-        _toggle(Attribute.blockQuote);
-      case 'bullet':
-        _toggle(Attribute.ul);
-      case 'number':
-        _toggle(Attribute.ol);
-      case 'indent+':
-        widget.controller.indentSelection(true);
-      case 'indent-':
-        widget.controller.indentSelection(false);
-      case 'align':
-        await _showAlignments(position, selection);
-      case 'divider':
-        widget.onDivider();
-      case 'undo':
-        if (widget.controller.hasUndo) {
-          widget.controller.undo();
-        } else if (widget.canUndoBlocks) {
-          widget.onUndoBlocks();
-        }
-      case 'redo':
-        if (widget.controller.hasRedo) {
-          widget.controller.redo();
-        } else if (widget.canRedoBlocks) {
-          widget.onRedoBlocks();
-        }
-      case null:
-        break;
-    }
-    _restoreSelection(selection);
-  }
-
-  PopupMenuItem<String> _item(String value, IconData icon, String label) =>
-      PopupMenuItem(
-        value: value,
-        child: Row(
-          children: [
-            Icon(icon),
-            const SizedBox(width: 12),
-            Text(label),
-          ],
-        ),
-      );
-
-  void _toggle(Attribute attribute) {
-    final selected = widget.controller
-            .getSelectionStyle()
-            .attributes[attribute.key]
-            ?.value ==
-        attribute.value;
-    widget.controller.formatSelection(
-      selected ? Attribute.clone(attribute, null) : attribute,
+    final size = await _showCompactDialog<String>(
+      title: 'Taille',
+      content: (dialogContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final item in const {
+            'small': 'Petite',
+            'normal': 'Normale',
+            'large': 'Grande',
+            'huge': 'Très grande',
+          }.entries)
+            ListTile(
+              dense: true,
+              title: Text(item.value),
+              onTap: () => Navigator.pop(dialogContext, item.key),
+            ),
+        ],
+      ),
     );
-  }
-
-  Future<void> _showSizes(
-    RelativeRect position,
-    TextSelection selection,
-  ) async {
-    final size = await _showAt<String>(position, const [
-      PopupMenuItem(value: 'small', child: Text('Petite')),
-      PopupMenuItem(value: 'normal', child: Text('Normale')),
-      PopupMenuItem(value: 'large', child: Text('Grande')),
-      PopupMenuItem(value: 'huge', child: Text('Très grande')),
-    ]);
     if (!mounted) return;
     _restoreSelection(selection);
     if (size != null) {
@@ -380,89 +388,124 @@ class _StudyRichToolbarState extends State<StudyRichToolbar> {
     }
   }
 
-  Future<void> _showPalette(
-    RelativeRect position,
-    TextSelection selection, {
-    required bool background,
-  }) async {
-    const colors = <String, Color>{
-      '#111827': Color(0xFF111827),
-      '#1E3A8A': Color(0xFF1E3A8A),
-      '#B91C1C': Color(0xFFB91C1C),
-      '#047857': Color(0xFF047857),
-      '#7E22CE': Color(0xFF7E22CE),
-      '#FFF59D': Color(0xFFFFF59D),
-      '#BBF7D0': Color(0xFFBBF7D0),
-      '#BFDBFE': Color(0xFFBFDBFE),
-      '#FBCFE8': Color(0xFFFBCFE8),
-      '#FED7AA': Color(0xFFFED7AA),
-    };
-    final value = await _showAt<String>(position, [
-      for (final color in colors.entries)
-        PopupMenuItem(
-          value: color.key,
-          child: Row(
+  Future<void> _showPalette({required bool background}) async {
+    final selection = _captureSelection();
+    final current = widget.controller
+        .getSelectionStyle()
+        .attributes[background ? Attribute.background.key : Attribute.color.key]
+        ?.value;
+    final value = await _showCompactDialog<String>(
+      title: background ? 'Surlignage' : 'Couleur du texte',
+      content: (dialogContext) => Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (current is String && _palette.containsKey(current)) ...[
+            const Text('Récente'),
+            const SizedBox(height: 8),
+            _colorChoice(
+                dialogContext, current, _palette[current]!, background),
+            const SizedBox(height: 12),
+          ],
+          const Text('Couleurs standards'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
             children: [
-              Container(
-                key: Key(
-                  '${background ? 'highlight' : 'color'}-${color.key}',
-                ),
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: color.value,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.black26),
-                ),
+              for (final color in _palette.entries)
+                _colorChoice(dialogContext, color.key, color.value, background),
+              IconButton(
+                tooltip: 'Aucune couleur',
+                onPressed: () => Navigator.pop(dialogContext, 'clear'),
+                icon: const Icon(Icons.format_color_reset),
               ),
-              const SizedBox(width: 12),
-              Text(color.key),
             ],
           ),
-        ),
-    ]);
+        ],
+      ),
+    );
     if (!mounted) return;
     _restoreSelection(selection);
     if (value != null) {
       widget.controller.formatSelection(
         Attribute.clone(
           background ? Attribute.background : Attribute.color,
-          value,
+          value == 'clear' ? null : value,
         ),
       );
     }
   }
 
-  Future<void> _showAlignments(
-    RelativeRect position,
-    TextSelection selection,
-  ) async {
-    final value = await _showAt<Attribute<String?>>(position, [
-      const PopupMenuItem(
-        value: Attribute.leftAlignment,
-        child: Text('Gauche'),
+  Widget _colorChoice(
+    BuildContext dialogContext,
+    String value,
+    Color color,
+    bool background,
+  ) =>
+      InkWell(
+        key: Key('${background ? 'highlight' : 'color'}-$value'),
+        customBorder: const CircleBorder(),
+        onTap: () => Navigator.pop(dialogContext, value),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: CircleAvatar(
+            radius: 16,
+            backgroundColor: color,
+            child: color.computeLuminance() > .75
+                ? const Icon(Icons.check, color: Colors.black38, size: 16)
+                : null,
+          ),
+        ),
+      );
+
+  Future<void> _showAlignments() async {
+    final selection = _captureSelection();
+    final value = await _showCompactDialog<Attribute<String?>>(
+      title: 'Alignement',
+      content: (dialogContext) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          for (final item in <(Attribute<String?>, IconData, String)>[
+            (Attribute.leftAlignment, Icons.format_align_left, 'Gauche'),
+            (Attribute.centerAlignment, Icons.format_align_center, 'Centre'),
+            (Attribute.rightAlignment, Icons.format_align_right, 'Droite'),
+            (
+              Attribute.justifyAlignment,
+              Icons.format_align_justify,
+              'Justifié'
+            ),
+          ])
+            IconButton(
+              tooltip: item.$3,
+              onPressed: () => Navigator.pop(dialogContext, item.$1),
+              icon: Icon(item.$2),
+            ),
+        ],
       ),
-      const PopupMenuItem(
-        value: Attribute.centerAlignment,
-        child: Text('Centre'),
-      ),
-      const PopupMenuItem(
-        value: Attribute.rightAlignment,
-        child: Text('Droite'),
-      ),
-      const PopupMenuItem(
-        value: Attribute.justifyAlignment,
-        child: Text('Justifié'),
-      ),
-    ]);
+    );
     if (!mounted) return;
     _restoreSelection(selection);
     if (value != null) widget.controller.formatSelection(value);
   }
 
-  Future<void> _insert() async {
-    final selection = _captureSelection();
-    await widget.onInsert();
-    if (mounted) _restoreSelection(selection);
+  void _undo() {
+    if (widget.controller.hasUndo) {
+      widget.controller.undo();
+    } else if (widget.canUndoBlocks) {
+      widget.onUndoBlocks();
+    }
+    widget.focusNode.requestFocus();
   }
+
+  void _redo() {
+    if (widget.controller.hasRedo) {
+      widget.controller.redo();
+    } else if (widget.canRedoBlocks) {
+      widget.onRedoBlocks();
+    }
+    widget.focusNode.requestFocus();
+  }
+
+  Future<void> _insert() => widget.onInsert(_captureSelection());
 }

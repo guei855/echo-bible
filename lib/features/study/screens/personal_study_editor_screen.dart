@@ -25,6 +25,13 @@ import 'package:flutter_quill/flutter_quill.dart';
 double studyToolbarBottomInset(MediaQueryData mediaQuery) =>
     mediaQuery.viewInsets.bottom;
 
+class _StudyInsertionAnchor {
+  const _StudyInsertionAnchor(this.blockId, this.selection);
+
+  final String blockId;
+  final TextSelection selection;
+}
+
 class PersonalStudyEditorScreen extends StatefulWidget {
   const PersonalStudyEditorScreen({
     super.key,
@@ -430,8 +437,11 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
                     controller: _activeController!,
                     focusNode: _activeFocusNode!,
                     onInsert: _showInsertMenu,
-                    onDivider: () =>
-                        _insertBlock(StudyBlockType.divider, const {}),
+                    onDivider: (selection) => _insertBlock(
+                      StudyBlockType.divider,
+                      const {},
+                      anchor: _insertionAnchor(selection),
+                    ),
                     onHideKeyboard: () =>
                         FocusManager.instance.primaryFocus?.unfocus(),
                     onUndoBlocks: _undoBlocks,
@@ -725,47 +735,90 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     _replaceBlocks(_redo.removeLast());
   }
 
-  Future<void> _showInsertMenu() async {
+  _StudyInsertionAnchor _insertionAnchor(TextSelection selection) =>
+      _StudyInsertionAnchor(
+        _activeBlockId ?? _study.blocks.last.id,
+        selection,
+      );
+
+  void _restoreInsertionAnchor(_StudyInsertionAnchor anchor) {
+    final controller = _controllers[anchor.blockId];
+    final focusNode = _focusNodes[anchor.blockId];
+    if (controller == null || focusNode == null) return;
+    final maxOffset = controller.document.length;
+    if (anchor.selection.isValid && anchor.selection.end <= maxOffset) {
+      controller.updateSelection(anchor.selection, ChangeSource.local);
+    }
+    focusNode.requestFocus();
+  }
+
+  Future<void> _showInsertMenu(TextSelection savedSelection) async {
+    final anchor = _insertionAnchor(savedSelection);
     final type = await showModalBottomSheet<StudyBlockType>(
       context: context,
       isScrollControlled: true,
+      requestFocus: false,
       showDragHandle: true,
       useSafeArea: true,
-      builder: (context) => ListView(
-        shrinkWrap: true,
-        children: [
-          const ListTile(title: Text('Insérer dans l’étude')),
-          _insertTile(context, StudyBlockType.verse, Icons.menu_book, 'Verset'),
-          _insertTile(context, StudyBlockType.verseRange, Icons.library_books,
-              'Passage'),
-          _insertTile(context, StudyBlockType.verseLink, Icons.link,
-              'Référence cliquable'),
-          _insertTile(
-              context, StudyBlockType.strong, Icons.translate, 'Bloc Strong'),
-          _insertTile(context, StudyBlockType.dictionary,
-              Icons.menu_book_outlined, 'Définition Vigouroux'),
-          _insertTile(context, StudyBlockType.crossReferences,
-              Icons.account_tree, 'Références croisées'),
-          _insertTile(context, StudyBlockType.comparison, Icons.compare_arrows,
-              'Comparaison'),
-          _insertTile(context, StudyBlockType.divider, Icons.horizontal_rule,
-              'Séparateur'),
-          _insertTile(
-              context, StudyBlockType.image, Icons.image_outlined, 'Image'),
-        ],
-      ),
+      builder: (context) {
+        final media = MediaQuery.of(context);
+        return Padding(
+          padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: (media.size.height -
+                      media.viewInsets.bottom -
+                      media.padding.vertical -
+                      32)
+                  .clamp(180, 620),
+            ),
+            child: ListView(
+              key: const Key('study-insert-menu-scrollable'),
+              shrinkWrap: true,
+              children: [
+                const ListTile(title: Text('Insérer dans l’étude')),
+                _insertTile(
+                    context, StudyBlockType.verse, Icons.menu_book, 'Verset'),
+                _insertTile(context, StudyBlockType.verseRange,
+                    Icons.library_books, 'Passage'),
+                _insertTile(context, StudyBlockType.verseLink, Icons.link,
+                    'Référence cliquable'),
+                _insertTile(context, StudyBlockType.strong, Icons.translate,
+                    'Bloc Strong'),
+                _insertTile(context, StudyBlockType.dictionary,
+                    Icons.menu_book_outlined, 'Définition Vigouroux'),
+                _insertTile(context, StudyBlockType.crossReferences,
+                    Icons.account_tree, 'Références croisées'),
+                _insertTile(context, StudyBlockType.comparison,
+                    Icons.compare_arrows, 'Comparaison'),
+                _insertTile(context, StudyBlockType.divider,
+                    Icons.horizontal_rule, 'Séparateur'),
+                _insertTile(context, StudyBlockType.image, Icons.image_outlined,
+                    'Image'),
+              ],
+            ),
+          ),
+        );
+      },
     );
-    if (type == null) return;
+    if (!mounted) return;
+    if (type == null) {
+      _restoreInsertionAnchor(anchor);
+      return;
+    }
     if (type == StudyBlockType.divider) {
-      _insertBlock(type, const {});
+      _insertBlock(type, const {}, anchor: anchor);
     } else if (type == StudyBlockType.strong) {
-      await _insertStrong();
+      await _insertStrong(anchor);
     } else if (type == StudyBlockType.dictionary) {
-      await _insertDictionary();
+      await _insertDictionary(anchor);
     } else if (type == StudyBlockType.image) {
-      await _insertImagePlaceholder();
+      await _insertImagePlaceholder(anchor);
     } else {
-      await _insertBible(type);
+      await _insertBible(type, anchor);
+    }
+    if (mounted && _controllers.containsKey(anchor.blockId)) {
+      _restoreInsertionAnchor(anchor);
     }
   }
 
@@ -777,32 +830,40 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
         onTap: () => Navigator.pop(context, type),
       );
 
-  void _insertBlock(StudyBlockType type, Map<String, Object?> payload) {
+  void _insertBlock(
+    StudyBlockType type,
+    Map<String, Object?> payload, {
+    required _StudyInsertionAnchor anchor,
+  }) {
     _remember();
     final now = DateTime.now();
-    final blocks = [..._study.blocks];
-    final activeIndex =
-        blocks.indexWhere((block) => block.id == _activeBlockId);
-    final insertAt = activeIndex < 0 ? blocks.length : activeIndex + 1;
-    blocks.insert(
-      insertAt,
-      StudyBlock(
-        id: '${now.microsecondsSinceEpoch}-${_study.blocks.length}',
-        type: type,
-        position: insertAt,
-        payload: payload,
-        createdAt: now,
-        updatedAt: now,
-      ),
+    final result = StudyRichTextCodec.insertAtSelection(
+      blocks: _study.blocks,
+      richBlockId: anchor.blockId,
+      selection: anchor.selection,
+      type: type,
+      payload: payload,
+      now: now,
+      idSeed: '${now.microsecondsSinceEpoch}-${_study.blocks.length}',
     );
-    blocks.insert(
-      insertAt + 1,
-      StudyRichTextCodec.emptyBlock(now, position: insertAt + 1),
-    );
-    _replaceBlocks(blocks);
+    _activeBlockId = result.continuationBlockId;
+    _replaceBlocks(result.blocks);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final controller = _controllers[result.continuationBlockId];
+      final focusNode = _focusNodes[result.continuationBlockId];
+      controller?.updateSelection(
+        const TextSelection.collapsed(offset: 0),
+        ChangeSource.local,
+      );
+      focusNode?.requestFocus();
+    });
   }
 
-  Future<void> _insertBible(StudyBlockType type) async {
+  Future<void> _insertBible(
+    StudyBlockType type,
+    _StudyInsertionAnchor anchor,
+  ) async {
     final selection = await _pickPassage();
     if (selection == null) return;
     final book = selection.book;
@@ -872,7 +933,7 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
               '${item.bookName} ${item.chapter}:${item.verseLabel} — ${item.text}')
           .toList();
     }
-    _insertBlock(type, base);
+    _insertBlock(type, base, anchor: anchor);
   }
 
   Future<List<BibleVersion>?> _pickVersions(
@@ -1077,7 +1138,7 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     );
   }
 
-  Future<void> _insertStrong() async {
+  Future<void> _insertStrong(_StudyInsertionAnchor anchor) async {
     final query = await _ask('Insérer un bloc Strong', 'Ex. G3056');
     if (query == null) return;
     try {
@@ -1106,24 +1167,27 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
         ),
       );
       if (displayMode == null) return;
-      _insertBlock(StudyBlockType.strong, {
-        'code': entry.strongNumber,
-        'originalWord': entry.originalWord,
-        'transliteration': entry.transliteration,
-        'definition': entry.frenchDefinition ??
-            entry.shortDefinition ??
-            entry.definition ??
-            '',
-        'language': entry.language,
-        'displayMode': displayMode,
-      });
+      _insertBlock(
+          StudyBlockType.strong,
+          {
+            'code': entry.strongNumber,
+            'originalWord': entry.originalWord,
+            'transliteration': entry.transliteration,
+            'definition': entry.frenchDefinition ??
+                entry.shortDefinition ??
+                entry.definition ??
+                '',
+            'language': entry.language,
+            'displayMode': displayMode,
+          },
+          anchor: anchor);
     } on Object {
       _message(
           'Le lexique Strong n’est pas installé. Téléchargez-le depuis Ressources.');
     }
   }
 
-  Future<void> _insertDictionary() async {
+  Future<void> _insertDictionary(_StudyInsertionAnchor anchor) async {
     final query = await _ask('Insérer une définition', 'Ex. Alliance');
     if (query == null) return;
     final entries = await const DictionaryRepository().search(query, limit: 10);
@@ -1144,21 +1208,28 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
       ),
     );
     if (entry == null) return;
-    _insertBlock(StudyBlockType.dictionary, {
-      'entryId': entry.id,
-      'title': entry.title,
-      'excerpt': entry.content.length > 420
-          ? '${entry.content.substring(0, 420)}…'
-          : entry.content,
-      'content': entry.content,
-      'source': entry.source,
-    });
+    _insertBlock(
+        StudyBlockType.dictionary,
+        {
+          'entryId': entry.id,
+          'title': entry.title,
+          'excerpt': entry.content.length > 420
+              ? '${entry.content.substring(0, 420)}…'
+              : entry.content,
+          'content': entry.content,
+          'source': entry.source,
+        },
+        anchor: anchor);
   }
 
-  Future<void> _insertImagePlaceholder() async {
+  Future<void> _insertImagePlaceholder(_StudyInsertionAnchor anchor) async {
     final caption = await _ask('Insérer une image', 'Légende ou chemin local');
     if (caption != null) {
-      _insertBlock(StudyBlockType.image, {'caption': caption});
+      _insertBlock(
+        StudyBlockType.image,
+        {'caption': caption},
+        anchor: anchor,
+      );
     }
   }
 

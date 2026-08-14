@@ -100,6 +100,16 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                     (marking) => marking.type == TextMarkingType.highlight)),
       );
 
+  bool get _selectionIsFavorite {
+    final selectedIds = _verses
+        .where((verse) =>
+            _selectedVerseNumbers.contains(verse['verse_number'] as int))
+        .map((verse) => verse['id'] as int)
+        .toList();
+    return selectedIds.isNotEmpty &&
+        selectedIds.every(_favoriteVerseIds.contains);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -510,6 +520,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
               onNote: _selectedVerseNumbers.length == 1
                   ? () => _openNoteEditor(_selectedVerses.first)
                   : null,
+              isFavorite: _selectionIsFavorite,
               onFavorite: _toggleFavorites,
               onCopy: _copySelectedVerses,
               onShare: _shareSelectedVerses,
@@ -1077,26 +1088,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     final selectedIds =
         selectedVerses.map((verse) => verse['id'] as int).toSet();
     final shouldRemove = selectedIds.every(_favoriteVerseIds.contains);
-    final db = await DatabaseHelper.instance.database;
-
-    await db.transaction((transaction) async {
-      for (final verseId in selectedIds) {
-        if (shouldRemove) {
-          await transaction.delete(
-            'favorites',
-            where: 'verse_id = ?',
-            whereArgs: [verseId],
-          );
-        } else if (!_favoriteVerseIds.contains(verseId)) {
-          await transaction.insert('favorites', {
-            'verse_id': verseId,
-            'created_at': DateTime.now().toIso8601String(),
-          });
-        }
-      }
-    });
-
-    if (!mounted) return;
+    final previousFavorites = Set<int>.from(_favoriteVerseIds);
     setState(() {
       if (shouldRemove) {
         _favoriteVerseIds.removeAll(selectedIds);
@@ -1104,6 +1096,34 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
         _favoriteVerseIds.addAll(selectedIds);
       }
     });
+    try {
+      final db = await DatabaseHelper.instance.database;
+      await db.transaction((transaction) async {
+        for (final verseId in selectedIds) {
+          if (shouldRemove) {
+            await transaction.delete(
+              'favorites',
+              where: 'verse_id = ?',
+              whereArgs: [verseId],
+            );
+          } else if (!previousFavorites.contains(verseId)) {
+            await transaction.insert('favorites', {
+              'verse_id': verseId,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          }
+        }
+      });
+    } on Object {
+      if (!mounted) return;
+      setState(() => _favoriteVerseIds = previousFavorites);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible de modifier les favoris.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
