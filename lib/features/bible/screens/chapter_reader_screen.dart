@@ -23,6 +23,8 @@ import 'package:echo_bible/features/bible/widgets/highlight_palette_sheet.dart';
 import 'package:echo_bible/features/bible/widgets/annotated_selectable_text.dart';
 import 'package:echo_bible/features/bible/widgets/verse_selection_action_bar.dart';
 import 'package:echo_bible/features/study/widgets/verse_study_sheet.dart';
+import 'package:echo_bible/features/study/models/personal_study.dart';
+import 'package:echo_bible/features/study/widgets/study_destination_sheet.dart';
 import 'package:echo_bible/features/bible/widgets/verse_quick_actions_sheet.dart';
 import 'package:echo_bible/features/study/screens/cross_references_screen.dart';
 import 'package:echo_bible/features/settings/screens/download_manager_screen.dart';
@@ -511,6 +513,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
               onCopy: _copySelectedVerses,
               onShare: _shareSelectedVerses,
               onStudy: () => _openVerseStudy(_selectedVerses.first),
+              onAddToStudy: _addSelectedVersesToStudy,
             ),
     );
   }
@@ -930,7 +933,52 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
         );
       case VerseQuickAction.study:
         _openVerseStudy(verse);
+      case VerseQuickAction.addToStudy:
+        await _addVersesToStudy([verse]);
     }
+  }
+
+  Future<void> _addSelectedVersesToStudy() =>
+      _addVersesToStudy(_selectedVerses);
+
+  Future<void> _addVersesToStudy(
+    List<Map<String, dynamic>> verses,
+  ) async {
+    if (verses.isEmpty) return;
+    final start = verses.first['verse_number'] as int;
+    final end = verses.last['verse_number'] as int;
+    final reference = '${widget.book.name} $_currentChapter:$start'
+        '${end == start ? '' : '-$end'}';
+    final now = DateTime.now();
+    final added = await StudyDestinationSheet.show(
+      context,
+      StudyBlock(
+        id: '${now.microsecondsSinceEpoch}-reader',
+        type: start == end ? StudyBlockType.verse : StudyBlockType.verseRange,
+        position: 0,
+        payload: {
+          'translationId': _selectedVersionId,
+          'translationLabel': _selectedVersion.abbreviation,
+          'bookId': widget.book.id,
+          'bookName': widget.book.name,
+          'chaptersCount': widget.book.chaptersCount,
+          'chapter': _currentChapter,
+          'verseStart': start,
+          'verseEnd': end,
+          'reference': reference,
+          'text': verses
+              .map((item) => '${item['verse_number']} ${item['text']}')
+              .join('\n'),
+        },
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    if (!mounted || !added) return;
+    _clearSelection();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Passage ajouté à l’étude.')),
+    );
   }
 
   TextStyle _readerTextStyle(Color color) {

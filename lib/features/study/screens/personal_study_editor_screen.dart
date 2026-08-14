@@ -1,293 +1,1238 @@
+import 'dart:async';
+
 import 'package:echo_bible/core/theme/app_colors.dart';
+import 'package:echo_bible/features/bible/models/bible_book.dart';
+import 'package:echo_bible/features/bible/models/bible_version.dart';
+import 'package:echo_bible/features/bible/repositories/bible_version_repository.dart';
+import 'package:echo_bible/features/bible/screens/chapter_reader_screen.dart';
+import 'package:echo_bible/features/dictionary/data/repository/dictionary_repository.dart';
+import 'package:echo_bible/features/dictionary/models/dictionary_entry.dart';
+import 'package:echo_bible/features/dictionary/screens/dictionary_detail_screen.dart';
 import 'package:echo_bible/features/study/models/personal_study.dart';
+import 'package:echo_bible/features/study/models/cross_reference.dart';
+import 'package:echo_bible/features/study/models/verse_study_data.dart';
+import 'package:echo_bible/features/study/repositories/cross_reference_repository.dart';
+import 'package:echo_bible/features/study/repositories/strong_repository.dart';
+import 'package:echo_bible/features/study/screens/strong_word_screen.dart';
 import 'package:echo_bible/features/study/services/personal_study_service.dart';
+import 'package:echo_bible/features/study/services/study_export_service.dart';
 import 'package:flutter/material.dart';
 
 class PersonalStudyEditorScreen extends StatefulWidget {
-  final PersonalStudy? study;
-
-  const PersonalStudyEditorScreen({super.key, this.study});
+  const PersonalStudyEditorScreen({
+    super.key,
+    required this.study,
+    this.saveDocument,
+    this.autosaveDelay = const Duration(milliseconds: 700),
+  });
+  final PersonalStudy study;
+  final Future<void> Function(PersonalStudy study)? saveDocument;
+  final Duration autosaveDelay;
 
   @override
   State<PersonalStudyEditorScreen> createState() =>
       _PersonalStudyEditorScreenState();
 }
 
-class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen> {
+class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
+    with WidgetsBindingObserver {
+  late PersonalStudy _study;
   late final TextEditingController _title;
-  late final TextEditingController _content;
-  late final TextEditingController _reference;
+  final Map<String, TextEditingController> _controllers = {};
+  final List<List<StudyBlock>> _undo = [];
+  final List<List<StudyBlock>> _redo = [];
+  Timer? _saveTimer;
+  String? _activeBlockId;
   bool _saving = false;
+  bool _saved = true;
 
   @override
   void initState() {
     super.initState();
-    _title = TextEditingController(text: widget.study?.title ?? '');
-    _content = TextEditingController(text: widget.study?.content ?? '');
-    _reference = TextEditingController(text: widget.study?.reference ?? '');
+    WidgetsBinding.instance.addObserver(this);
+    _study = widget.study;
+    _title = TextEditingController(text: _study.title)..addListener(_changed);
+    _syncControllers();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _saveNow();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _saveTimer?.cancel();
+    _title.removeListener(_changed);
     _title.dispose();
-    _content.dispose();
-    _reference.dispose();
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Scaffold(
-      backgroundColor: colors.surface,
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: TextField(
-          controller: _title,
-          textCapitalization: TextCapitalization.sentences,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          decoration: const InputDecoration(
-            hintText: 'Document sans titre',
-            border: InputBorder.none,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Enregistrer',
-            onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox.square(
-                    dimension: 19,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check_rounded),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'reference') _showReferenceEditor();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'reference',
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.menu_book_rounded),
-                  title: Text('Référence biblique'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (_reference.text.trim().isNotEmpty)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(18, 12, 18, 0),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8EEFF),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.menu_book_rounded,
-                    color: AppColors.primary,
-                    size: 19,
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      _reference.text,
-                      style: const TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Modifier la référence',
-                    onPressed: _showReferenceEditor,
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                  ),
-                ],
-              ),
-            ),
-          Expanded(
-            child: TextField(
-              controller: _content,
-              expands: true,
-              minLines: null,
-              maxLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              textCapitalization: TextCapitalization.sentences,
-              style: TextStyle(
-                color: colors.onSurface,
-                fontSize: 17,
-                height: 1.55,
-              ),
-              decoration: const InputDecoration(
-                hintText: 'Créer votre étude…',
-                hintStyle: TextStyle(fontStyle: FontStyle.italic),
-                contentPadding: EdgeInsets.fromLTRB(22, 22, 22, 80),
-                border: InputBorder.none,
-              ),
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: _FormattingBar(
-          onBold: () => _wrapSelection('**', '**'),
-          onItalic: () => _wrapSelection('_', '_'),
-          onUnderline: () => _wrapSelection('<u>', '</u>'),
-          onBullet: () => _prefixSelection('• '),
-          onReference: _showReferenceEditor,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showReferenceEditor() async {
-    final controller = TextEditingController(text: _reference.text);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Référence biblique'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Ex. Jean 3:16',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Ajouter'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (value != null && mounted) {
-      setState(() => _reference.text = value);
+  void _syncControllers() {
+    final ids = _study.blocks.map((block) => block.id).toSet();
+    for (final id
+        in _controllers.keys.where((id) => !ids.contains(id)).toList()) {
+      _controllers.remove(id)?.dispose();
+    }
+    for (final block in _study.blocks.where(_isEditable)) {
+      _controllers.putIfAbsent(block.id, () {
+        final controller = TextEditingController(
+          text: block.payload['text'] as String? ?? '',
+        );
+        controller.addListener(() => _onBlockText(block.id, controller.text));
+        return controller;
+      });
     }
   }
 
-  Future<void> _save() async {
-    final title = _title.text.trim();
-    final content = _content.text.trim();
-    if (content.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Écrivez le contenu de votre étude.')),
-      );
-      return;
-    }
-    setState(() => _saving = true);
+  bool _isEditable(StudyBlock block) =>
+      block.type == StudyBlockType.text ||
+      block.type == StudyBlockType.heading ||
+      block.type == StudyBlockType.quote;
+
+  void _onBlockText(String id, String text) {
+    final index = _study.blocks.indexWhere((block) => block.id == id);
+    if (index < 0 || _study.blocks[index].payload['text'] == text) return;
+    final blocks = [..._study.blocks];
+    blocks[index] = blocks[index].copyWith(
+      payload: {...blocks[index].payload, 'text': text},
+      updatedAt: DateTime.now(),
+    );
+    _study = _study.copyWith(blocks: blocks);
+    _changed();
+  }
+
+  void _changed() {
+    _saveTimer?.cancel();
+    if (mounted) setState(() => _saved = false);
+    _saveTimer = Timer(widget.autosaveDelay, _saveNow);
+  }
+
+  Future<void> _saveNow() async {
+    _saveTimer?.cancel();
+    if (_saved || _saving) return;
+    if (mounted) setState(() => _saving = true);
+    final title =
+        _title.text.trim().isEmpty ? 'Document sans titre' : _title.text.trim();
+    final snapshot = _study.copyWith(title: title, updatedAt: DateTime.now());
     try {
-      await PersonalStudyService.save(
-        id: widget.study?.id,
-        title: title.isEmpty ? 'Document sans titre' : title,
-        content: content,
-        reference: _reference.text,
-      );
-      if (mounted) Navigator.pop(context, true);
+      await (widget.saveDocument ??
+          PersonalStudyService.saveDocument)(snapshot);
+      _study = snapshot;
+      if (mounted) setState(() => _saved = true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  Future<void> _finish() async {
+    await _saveNow();
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _finish();
+      },
+      child: Scaffold(
+        backgroundColor: colors.surface,
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: 'Retour',
+            onPressed: _finish,
+            icon: const Icon(Icons.arrow_back),
+          ),
+          titleSpacing: 0,
+          title: TextField(
+            key: const Key('study-title'),
+            controller: _title,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            decoration: const InputDecoration(
+              hintText: 'Document sans titre',
+              border: InputBorder.none,
+            ),
+          ),
+          actions: [
+            Center(
+              child: Text(
+                _saving ? 'Enregistrement…' : (_saved ? 'Sauvegardé' : ''),
+                key: const Key('autosave-status'),
+                style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Terminer',
+              onPressed: _finish,
+              icon: const Icon(Icons.check),
+            ),
+            PopupMenuButton<String>(
+              onSelected: _documentAction,
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                    value: 'metadata', child: Text('Référence et tags')),
+                PopupMenuItem(
+                  value: 'status',
+                  child: Text(_study.status == StudyStatus.draft
+                      ? 'Marquer comme finalisé'
+                      : 'Repasser en brouillon'),
+                ),
+                const PopupMenuItem(
+                    value: 'export', child: Text('Exporter / partager')),
+              ],
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            if (_study.primaryReference?.isNotEmpty ?? false)
+              _ReferenceBanner(reference: _study.primaryReference!),
+            Expanded(
+              child: ReorderableListView.builder(
+                key: const Key('study-block-list'),
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 100),
+                buildDefaultDragHandles: false,
+                itemCount: _study.blocks.length,
+                onReorderItem: _reorder,
+                itemBuilder: (context, index) {
+                  final block = _study.blocks[index];
+                  return _BlockEditor(
+                    key: ValueKey(block.id),
+                    block: block,
+                    index: index,
+                    controller: _controllers[block.id],
+                    onEditingTap: () => _activeBlockId = block.id,
+                    onTap: () => _openBlock(block),
+                    onDelete: () => _deleteBlock(index),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: _FormattingBar(
+            canUndo: _undo.isNotEmpty,
+            canRedo: _redo.isNotEmpty,
+            onStyle: _chooseStyle,
+            onBold: () => _wrapSelection('**', '**'),
+            onItalic: () => _wrapSelection('_', '_'),
+            onUnderline: () => _wrapSelection('<u>', '</u>'),
+            onMore: _moreFormatting,
+            onAdd: _showInsertMenu,
+            onKeyboard: () => FocusManager.instance.primaryFocus?.unfocus(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _remember() {
+    _undo.add([..._study.blocks]);
+    if (_undo.length > 30) _undo.removeAt(0);
+    _redo.clear();
+  }
+
+  void _replaceBlocks(List<StudyBlock> blocks) {
+    setState(() {
+      _study = _study.copyWith(blocks: blocks);
+      _syncControllers();
+    });
+    _changed();
+  }
+
+  void _reorder(int oldIndex, int newIndex) {
+    _remember();
+    if (newIndex > oldIndex) newIndex--;
+    final blocks = [..._study.blocks];
+    blocks.insert(newIndex, blocks.removeAt(oldIndex));
+    _replaceBlocks([
+      for (var index = 0; index < blocks.length; index++)
+        blocks[index].copyWith(position: index, updatedAt: DateTime.now()),
+    ]);
+  }
+
+  void _deleteBlock(int index) {
+    final removed = _study.blocks[index];
+    _remember();
+    final blocks = [..._study.blocks]..removeAt(index);
+    _replaceBlocks(blocks);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Bloc supprimé.'),
+      action: SnackBarAction(
+        label: 'Annuler',
+        onPressed: () {
+          final restored = [..._study.blocks]..insert(index, removed);
+          _replaceBlocks(restored);
+        },
+      ),
+    ));
+  }
+
+  TextEditingController? get _activeController {
+    final active = _controllers[_activeBlockId];
+    if (active != null) return active;
+    return _controllers.values.isEmpty ? null : _controllers.values.last;
+  }
+
   void _wrapSelection(String before, String after) {
-    final value = _content.value;
-    final selection = value.selection;
-    final start = selection.isValid ? selection.start : value.text.length;
-    final end = selection.isValid ? selection.end : value.text.length;
+    final controller = _activeController;
+    if (controller == null) return;
+    _remember();
+    final value = controller.value;
+    final start =
+        value.selection.isValid ? value.selection.start : value.text.length;
+    final end =
+        value.selection.isValid ? value.selection.end : value.text.length;
     final replacement = '$before${value.text.substring(start, end)}$after';
-    _content.value = value.copyWith(
+    controller.value = value.copyWith(
       text: value.text.replaceRange(start, end, replacement),
       selection: TextSelection.collapsed(offset: start + replacement.length),
     );
   }
 
   void _prefixSelection(String prefix) {
-    final value = _content.value;
-    final selection = value.selection;
-    final start = selection.isValid ? selection.start : value.text.length;
-    final end = selection.isValid ? selection.end : value.text.length;
+    final controller = _activeController;
+    if (controller == null) return;
+    _remember();
+    final value = controller.value;
+    final start =
+        value.selection.isValid ? value.selection.start : value.text.length;
+    final end =
+        value.selection.isValid ? value.selection.end : value.text.length;
     final replacement = value.text
         .substring(start, end)
         .split('\n')
         .map((line) => '$prefix$line')
         .join('\n');
-    _content.value = value.copyWith(
+    controller.value = value.copyWith(
       text: value.text.replaceRange(start, end, replacement),
       selection: TextSelection.collapsed(offset: start + replacement.length),
     );
   }
-}
 
-class _FormattingBar extends StatelessWidget {
-  final VoidCallback onBold;
-  final VoidCallback onItalic;
-  final VoidCallback onUnderline;
-  final VoidCallback onBullet;
-  final VoidCallback onReference;
-
-  const _FormattingBar({
-    required this.onBold,
-    required this.onItalic,
-    required this.onUnderline,
-    required this.onBullet,
-    required this.onReference,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+  Future<void> _chooseStyle() async {
+    const styles = [
+      'Normal',
+      'Titre 1',
+      'Titre 2',
+      'Titre 3',
+      'Sous-titre',
+      'Parole forte',
+      'Application',
+      'Note personnelle'
+    ];
+    final value = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final style in styles)
+              ListTile(
+                  title: Text(style),
+                  onTap: () => Navigator.pop(context, style))
+          ],
         ),
       ),
-      child: Row(
+    );
+    if (value == null) return;
+    final controller = _activeController;
+    String? id;
+    for (final entry in _controllers.entries) {
+      if (entry.value == controller) {
+        id = entry.key;
+        break;
+      }
+    }
+    final index = _study.blocks.indexWhere((block) => block.id == id);
+    if (index < 0) return;
+    _remember();
+    final blocks = [..._study.blocks];
+    final heading = value.startsWith('Titre') || value == 'Sous-titre';
+    blocks[index] = blocks[index].copyWith(
+      type: heading ? StudyBlockType.heading : StudyBlockType.text,
+      payload: {
+        ...blocks[index].payload,
+        'style': {'name': value.toLowerCase()}
+      },
+    );
+    _replaceBlocks(blocks);
+  }
+
+  Future<void> _moreFormatting() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Wrap(children: [
+          _formatTile(context, 'strike', Icons.format_strikethrough, 'Barré'),
+          _formatTile(
+              context, 'color', Icons.format_color_text, 'Couleur texte'),
+          _formatTile(context, 'highlight', Icons.highlight, 'Surlignage'),
+          _formatTile(context, 'quote', Icons.format_quote, 'Citation'),
+          _formatTile(
+              context, 'bullet', Icons.format_list_bulleted, 'Liste à puces'),
+          _formatTile(
+              context, 'number', Icons.format_list_numbered, 'Liste numérotée'),
+          _formatTile(context, 'divider', Icons.horizontal_rule, 'Séparateur'),
+          _formatTile(context, 'undo', Icons.undo, 'Annuler'),
+          _formatTile(context, 'redo', Icons.redo, 'Rétablir'),
+        ]),
+      ),
+    );
+    switch (action) {
+      case 'strike':
+        _wrapSelection('~~', '~~');
+        break;
+      case 'color':
+        _wrapSelection('<color=#2563EB>', '</color>');
+        break;
+      case 'highlight':
+        _wrapSelection('<mark>', '</mark>');
+        break;
+      case 'quote':
+        _prefixSelection('> ');
+        break;
+      case 'bullet':
+        _prefixSelection('• ');
+        break;
+      case 'number':
+        _prefixSelection('1. ');
+        break;
+      case 'divider':
+        _insertBlock(StudyBlockType.divider, const {});
+        break;
+      case 'undo':
+        _undoBlocks();
+        break;
+      case 'redo':
+        _redoBlocks();
+        break;
+    }
+  }
+
+  Widget _formatTile(
+          BuildContext context, String value, IconData icon, String label) =>
+      SizedBox(
+        width: MediaQuery.sizeOf(context).width / 3,
+        child: ListTile(
+          leading: Icon(icon),
+          title: Text(label, style: const TextStyle(fontSize: 12)),
+          onTap: () => Navigator.pop(context, value),
+        ),
+      );
+
+  void _undoBlocks() {
+    if (_undo.isEmpty) return;
+    _redo.add([..._study.blocks]);
+    _replaceBlocks(_undo.removeLast());
+  }
+
+  void _redoBlocks() {
+    if (_redo.isEmpty) return;
+    _undo.add([..._study.blocks]);
+    _replaceBlocks(_redo.removeLast());
+  }
+
+  Future<void> _showInsertMenu() async {
+    final type = await showModalBottomSheet<StudyBlockType>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (context) => ListView(
+        shrinkWrap: true,
         children: [
-          const Text(
-            'Normal',
-            style: TextStyle(
-              color: AppColors.primary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const Spacer(),
-          IconButton(onPressed: onBold, icon: const Icon(Icons.format_bold)),
-          IconButton(
-              onPressed: onItalic, icon: const Icon(Icons.format_italic)),
-          IconButton(
-            onPressed: onUnderline,
-            icon: const Icon(Icons.format_underlined),
-          ),
-          IconButton(
-            onPressed: onBullet,
-            icon: const Icon(Icons.format_list_bulleted),
-          ),
-          IconButton(
-            tooltip: 'Ajouter une référence',
-            onPressed: onReference,
-            icon: const Icon(Icons.add_box_outlined),
-          ),
+          const ListTile(title: Text('Insérer dans l’étude')),
+          _insertTile(
+              context, StudyBlockType.text, Icons.text_fields, 'Bloc de texte'),
+          _insertTile(context, StudyBlockType.verse, Icons.menu_book, 'Verset'),
+          _insertTile(context, StudyBlockType.verseRange, Icons.library_books,
+              'Passage'),
+          _insertTile(context, StudyBlockType.verseLink, Icons.link,
+              'Référence cliquable'),
+          _insertTile(
+              context, StudyBlockType.strong, Icons.translate, 'Bloc Strong'),
+          _insertTile(context, StudyBlockType.dictionary,
+              Icons.menu_book_outlined, 'Définition Vigouroux'),
+          _insertTile(context, StudyBlockType.crossReferences,
+              Icons.account_tree, 'Références croisées'),
+          _insertTile(context, StudyBlockType.comparison, Icons.compare_arrows,
+              'Comparaison'),
+          _insertTile(context, StudyBlockType.divider, Icons.horizontal_rule,
+              'Séparateur'),
+          _insertTile(
+              context, StudyBlockType.image, Icons.image_outlined, 'Image'),
         ],
       ),
     );
+    if (type == null) return;
+    if (type == StudyBlockType.text || type == StudyBlockType.divider) {
+      _insertBlock(
+          type,
+          type == StudyBlockType.text
+              ? const {
+                  'text': '',
+                  'style': {'name': 'normal'}
+                }
+              : const {});
+    } else if (type == StudyBlockType.strong) {
+      await _insertStrong();
+    } else if (type == StudyBlockType.dictionary) {
+      await _insertDictionary();
+    } else if (type == StudyBlockType.image) {
+      await _insertImagePlaceholder();
+    } else {
+      await _insertBible(type);
+    }
   }
+
+  Widget _insertTile(BuildContext context, StudyBlockType type, IconData icon,
+          String label) =>
+      ListTile(
+        leading: Icon(icon),
+        title: Text(label),
+        onTap: () => Navigator.pop(context, type),
+      );
+
+  void _insertBlock(StudyBlockType type, Map<String, Object?> payload) {
+    _remember();
+    final now = DateTime.now();
+    final blocks = [
+      ..._study.blocks,
+      StudyBlock(
+        id: '${now.microsecondsSinceEpoch}-${_study.blocks.length}',
+        type: type,
+        position: _study.blocks.length,
+        payload: payload,
+        createdAt: now,
+        updatedAt: now,
+      )
+    ];
+    _replaceBlocks(blocks);
+  }
+
+  Future<void> _insertBible(StudyBlockType type) async {
+    final selection = await _pickPassage();
+    if (selection == null) return;
+    final book = selection.book;
+    final version = selection.version;
+    final rows = await BibleVersionRepository.getChapter(
+      bookId: book.id,
+      chapterNumber: selection.chapter,
+      versionId: version.id,
+    );
+    final selectedRows = rows.where((row) {
+      final verse = row['verse_number'] as int;
+      return verse >= selection.start && verse <= selection.end;
+    }).toList();
+    final reference =
+        '${book.name} ${selection.chapter}:${selection.start}${selection.end == selection.start ? '' : '-${selection.end}'}';
+    final base = <String, Object?>{
+      'translationId': version.id,
+      'translationLabel': version.abbreviation,
+      'bookId': book.id,
+      'bookName': book.name,
+      'chaptersCount': book.chaptersCount,
+      'chapter': selection.chapter,
+      'verseStart': selection.start,
+      'verseEnd': selection.end,
+      'reference': reference,
+      'text': selectedRows
+          .map((row) => '${row['verse_number']} ${row['text']}')
+          .join('\n'),
+    };
+    if (type == StudyBlockType.comparison) {
+      final versions = await BibleVersionRepository.getInstalledVersions();
+      if (!mounted) return;
+      final selectedVersions = await _pickVersions(versions);
+      if (selectedVersions == null || selectedVersions.isEmpty) return;
+      final comparisons = <Map<String, Object?>>[];
+      for (final installed in selectedVersions) {
+        final verseRows = await BibleVersionRepository.getChapter(
+          bookId: book.id,
+          chapterNumber: selection.chapter,
+          versionId: installed.id,
+        );
+        comparisons.add({
+          'id': installed.id,
+          'label': installed.abbreviation,
+          'text': verseRows
+              .where((row) {
+                final verse = row['verse_number'] as int;
+                return verse >= selection.start && verse <= selection.end;
+              })
+              .map((row) => '${row['verse_number']} ${row['text']}')
+              .join('\n'),
+        });
+      }
+      base['versions'] = comparisons;
+    } else if (type == StudyBlockType.crossReferences) {
+      final references = await const CrossReferenceRepository().forVerse(
+        book.id,
+        selection.chapter,
+        selection.start,
+        versionId: version.id,
+      );
+      if (!mounted) return;
+      final selectedReferences = await _pickCrossReferences(references);
+      if (selectedReferences == null || selectedReferences.isEmpty) return;
+      base['references'] = selectedReferences
+          .map((item) =>
+              '${item.bookName} ${item.chapter}:${item.verseLabel} — ${item.text}')
+          .toList();
+    }
+    _insertBlock(type, base);
+  }
+
+  Future<List<BibleVersion>?> _pickVersions(
+    List<BibleVersion> versions,
+  ) async {
+    final selected = versions.take(3).map((version) => version.id).toSet();
+    return showDialog<List<BibleVersion>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Versions à comparer'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final version in versions)
+                  CheckboxListTile(
+                    value: selected.contains(version.id),
+                    title: Text(version.name),
+                    subtitle: Text(version.abbreviation),
+                    onChanged: (value) => setDialogState(() {
+                      if (value == true) {
+                        selected.add(version.id);
+                      } else {
+                        selected.remove(version.id);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(
+                        context,
+                        versions
+                            .where((version) => selected.contains(version.id))
+                            .toList(),
+                      ),
+              child: const Text('Comparer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<List<CrossReference>?> _pickCrossReferences(
+    List<CrossReference> references,
+  ) async {
+    final selected = <int>{};
+    return showDialog<List<CrossReference>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Choisir les références'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: references.length,
+              itemBuilder: (context, index) {
+                final item = references[index];
+                return CheckboxListTile(
+                  value: selected.contains(index),
+                  title: Text(
+                    '${item.bookName} ${item.chapter}:${item.verseLabel}',
+                  ),
+                  subtitle: Text(
+                    item.text,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onChanged: (_) => setDialogState(() {
+                    if (!selected.add(index)) selected.remove(index);
+                  }),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(
+                        context,
+                        selected.map((index) => references[index]).toList(),
+                      ),
+              child: const Text('Insérer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<_PassageSelection?> _pickPassage() async {
+    final versions = await BibleVersionRepository.getInstalledVersions();
+    if (versions.isEmpty || !mounted) return null;
+    var version = versions.first;
+    var books = await BibleVersionRepository.getBooks(versionId: version.id);
+    if (books.isEmpty || !mounted) return null;
+    var book = books.first;
+    var chapter = 1;
+    var start = 1;
+    var end = 1;
+    return showDialog<_PassageSelection>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Choisir un passage'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              DropdownButtonFormField<BibleVersion>(
+                initialValue: version,
+                decoration: const InputDecoration(labelText: 'Version'),
+                items: [
+                  for (final item in versions)
+                    DropdownMenuItem(
+                        value: item, child: Text(item.abbreviation))
+                ],
+                onChanged: (value) async {
+                  if (value == null) return;
+                  final nextBooks = await BibleVersionRepository.getBooks(
+                      versionId: value.id);
+                  setDialogState(() {
+                    version = value;
+                    books = nextBooks;
+                    book = books.first;
+                    chapter = 1;
+                  });
+                },
+              ),
+              DropdownButtonFormField<BibleBook>(
+                initialValue: book,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Livre'),
+                items: [
+                  for (final item in books)
+                    DropdownMenuItem(value: item, child: Text(item.name))
+                ],
+                onChanged: (value) => setDialogState(() {
+                  book = value ?? book;
+                  chapter = 1;
+                }),
+              ),
+              Row(children: [
+                Expanded(
+                    child: TextFormField(
+                        initialValue: '1',
+                        keyboardType: TextInputType.number,
+                        decoration:
+                            const InputDecoration(labelText: 'Chapitre'),
+                        onChanged: (value) =>
+                            chapter = int.tryParse(value) ?? 1)),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: TextFormField(
+                        initialValue: '1',
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Début'),
+                        onChanged: (value) =>
+                            start = int.tryParse(value) ?? 1)),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: TextFormField(
+                        initialValue: '1',
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(labelText: 'Fin'),
+                        onChanged: (value) =>
+                            end = int.tryParse(value) ?? start)),
+              ]),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler')),
+            FilledButton(
+                onPressed: () => Navigator.pop(
+                    context,
+                    _PassageSelection(
+                        version,
+                        book,
+                        chapter.clamp(1, book.chaptersCount),
+                        start.clamp(1, 999),
+                        end.clamp(start, 999))),
+                child: const Text('Insérer')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _insertStrong() async {
+    final query = await _ask('Insérer un bloc Strong', 'Ex. G3056');
+    if (query == null) return;
+    try {
+      final entry = await const StrongRepository().findByNumber(query);
+      if (entry == null) return _message('Entrée Strong introuvable.');
+      if (!mounted) return;
+      final displayMode = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.link),
+                title: const Text('Insérer un lien Strong'),
+                onTap: () => Navigator.pop(context, 'link'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.view_agenda_outlined),
+                title: const Text('Insérer un bloc Strong'),
+                onTap: () => Navigator.pop(context, 'block'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (displayMode == null) return;
+      _insertBlock(StudyBlockType.strong, {
+        'code': entry.strongNumber,
+        'originalWord': entry.originalWord,
+        'transliteration': entry.transliteration,
+        'definition': entry.frenchDefinition ??
+            entry.shortDefinition ??
+            entry.definition ??
+            '',
+        'language': entry.language,
+        'displayMode': displayMode,
+      });
+    } on Object {
+      _message(
+          'Le lexique Strong n’est pas installé. Téléchargez-le depuis Ressources.');
+    }
+  }
+
+  Future<void> _insertDictionary() async {
+    final query = await _ask('Insérer une définition', 'Ex. Alliance');
+    if (query == null) return;
+    final entries = await const DictionaryRepository().search(query, limit: 10);
+    if (!mounted) return;
+    if (entries.isEmpty) {
+      return _message('Dictionnaire non installé ou article introuvable.');
+    }
+    final entry = await showDialog<DictionaryEntry>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Choisir un article'),
+        children: [
+          for (final item in entries)
+            SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, item),
+                child: Text(item.title))
+        ],
+      ),
+    );
+    if (entry == null) return;
+    _insertBlock(StudyBlockType.dictionary, {
+      'entryId': entry.id,
+      'title': entry.title,
+      'excerpt': entry.content.length > 420
+          ? '${entry.content.substring(0, 420)}…'
+          : entry.content,
+      'content': entry.content,
+      'source': entry.source,
+    });
+  }
+
+  Future<void> _insertImagePlaceholder() async {
+    final caption = await _ask('Insérer une image', 'Légende ou chemin local');
+    if (caption != null) {
+      _insertBlock(StudyBlockType.image, {'caption': caption});
+    }
+  }
+
+  Future<String?> _ask(String title, String hint) async {
+    final controller = TextEditingController();
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(
+                hintText: hint, border: const OutlineInputBorder())),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Continuer')),
+        ],
+      ),
+    );
+    controller.dispose();
+    return value?.isEmpty == true ? null : value;
+  }
+
+  void _message(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
+  Future<void> _openBlock(StudyBlock block) async {
+    final payload = block.payload;
+    if ({
+      StudyBlockType.verse,
+      StudyBlockType.verseRange,
+      StudyBlockType.verseLink,
+      StudyBlockType.crossReferences,
+      StudyBlockType.comparison
+    }.contains(block.type)) {
+      final books = await BibleVersionRepository.getBooks(
+          versionId: payload['translationId'] as int?);
+      final bookId = payload['bookId'] as int?;
+      final matches = books.where((book) => book.id == bookId);
+      if (!mounted || matches.isEmpty) return;
+      await Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => ChapterReaderScreen(
+                    book: matches.first,
+                    initialChapter: payload['chapter'] as int? ?? 1,
+                    initialVerse: payload['verseStart'] as int?,
+                    initialVersionId: payload['translationId'] as int?,
+                  )));
+    } else if (block.type == StudyBlockType.strong) {
+      final code = payload['code'] as String? ?? '';
+      final entry = await const StrongRepository().findByNumber(code);
+      if (!mounted || entry == null) return;
+      await Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => StrongWordScreen(
+                      word: VerseStrongWord(
+                    id: entry.id,
+                    order: 0,
+                    word: entry.transliteration ?? entry.originalWord,
+                    code: entry.strongNumber,
+                    originalWord: entry.originalWord,
+                    language: entry.language,
+                    definition: entry.definition,
+                    transliteration: entry.transliteration,
+                    frenchDefinition: entry.frenchDefinition,
+                    shortDefinition: entry.shortDefinition,
+                    source: entry.source,
+                    license: entry.license,
+                    numberKind: entry.numberKind,
+                  ))));
+    } else if (block.type == StudyBlockType.dictionary) {
+      final content = payload['content'] as String?;
+      if (content == null || !mounted) return;
+      await Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => DictionaryDetailScreen(
+                      entry: DictionaryEntry(
+                    id: payload['entryId'] as int? ?? 0,
+                    headword: payload['title'] as String? ?? '',
+                    content: content,
+                    source: payload['source'] as String? ?? 'Vigouroux',
+                    sourceKind: '',
+                    sourceUrl: '',
+                    quality: '',
+                  ))));
+    }
+  }
+
+  Future<void> _documentAction(String action) async {
+    if (action == 'metadata') {
+      final reference = TextEditingController(text: _study.primaryReference);
+      final tags = TextEditingController(text: _study.tags.join(', '));
+      final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+                title: const Text('Référence principale et tags'),
+                content: Column(mainAxisSize: MainAxisSize.min, children: [
+                  TextField(
+                      controller: reference,
+                      decoration: const InputDecoration(
+                          labelText: 'Texte principal',
+                          hintText: 'Éphésiens 2:8-10')),
+                  TextField(
+                      controller: tags,
+                      decoration: const InputDecoration(
+                          labelText: 'Tags', hintText: 'Grâce, Foi, Jeunesse')),
+                ]),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Annuler')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Sauvegarder'))
+                ],
+              ));
+      if (confirmed == true) {
+        setState(() => _study = _study.copyWith(
+            primaryReference: reference.text,
+            tags: tags.text
+                .split(',')
+                .map((tag) => tag.trim())
+                .where((tag) => tag.isNotEmpty)
+                .toList()));
+        _changed();
+      }
+      reference.dispose();
+      tags.dispose();
+    } else if (action == 'status') {
+      setState(() => _study = _study.copyWith(
+          status: _study.status == StudyStatus.draft
+              ? StudyStatus.completed
+              : StudyStatus.draft));
+      _changed();
+    } else if (action == 'export') {
+      await _saveNow();
+      await StudyExportService.share(_study);
+    }
+  }
+}
+
+class _PassageSelection {
+  const _PassageSelection(
+      this.version, this.book, this.chapter, this.start, this.end);
+  final BibleVersion version;
+  final BibleBook book;
+  final int chapter;
+  final int start;
+  final int end;
+}
+
+class _ReferenceBanner extends StatelessWidget {
+  const _ReferenceBanner({required this.reference});
+  final String reference;
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        color: Theme.of(context).colorScheme.primaryContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Text(reference,
+            style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.bold)),
+      );
+}
+
+class _BlockEditor extends StatelessWidget {
+  const _BlockEditor(
+      {required super.key,
+      required this.block,
+      required this.index,
+      required this.controller,
+      required this.onEditingTap,
+      required this.onTap,
+      required this.onDelete});
+  final StudyBlock block;
+  final int index;
+  final TextEditingController? controller;
+  final VoidCallback onEditingTap;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (block.type == StudyBlockType.divider) {
+      return _frame(context, const Divider(thickness: 1.4));
+    }
+    if (controller != null) {
+      final heading = block.type == StudyBlockType.heading;
+      return _frame(
+          context,
+          TextField(
+            key: Key('study-block-${block.id}'),
+            controller: controller,
+            onTap: onEditingTap,
+            minLines: heading ? 1 : 2,
+            maxLines: null,
+            textCapitalization: TextCapitalization.sentences,
+            style: TextStyle(
+                fontSize: heading ? 20 : 16,
+                fontWeight: heading ? FontWeight.bold : FontWeight.normal,
+                height: 1.45),
+            decoration: InputDecoration(
+                hintText: heading ? 'Titre' : 'Écrivez ici…',
+                border: InputBorder.none),
+          ));
+    }
+    return _frame(
+        context,
+        InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Icon(_icon(block.type), color: AppColors.primary, size: 19),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(_label(block.type),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary))),
+                const Icon(Icons.open_in_new, size: 16)
+              ]),
+              const SizedBox(height: 8),
+              Text(block.plainText.isEmpty ? 'Bloc vide' : block.plainText,
+                  maxLines: 12, overflow: TextOverflow.ellipsis),
+              if ({
+                StudyBlockType.verse,
+                StudyBlockType.verseRange,
+                StudyBlockType.verseLink
+              }.contains(block.type)) ...[
+                const SizedBox(height: 8),
+                const Text('Ouvrir dans la Bible →',
+                    style: TextStyle(
+                        color: AppColors.primary, fontWeight: FontWeight.bold))
+              ],
+            ]),
+          ),
+        ));
+  }
+
+  Widget _frame(BuildContext context, Widget child) => Card(
+        margin: const EdgeInsets.only(bottom: 10),
+        color: block.type == StudyBlockType.text ||
+                block.type == StudyBlockType.heading
+            ? Colors.transparent
+            : null,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+                color: Theme.of(context).colorScheme.outlineVariant)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ReorderableDragStartListener(
+              index: index,
+              child: const Padding(
+                  padding: EdgeInsets.fromLTRB(8, 16, 4, 16),
+                  child: Icon(Icons.drag_indicator, size: 20))),
+          Expanded(child: child),
+          IconButton(
+              tooltip: 'Supprimer le bloc',
+              onPressed: onDelete,
+              icon: const Icon(Icons.close, size: 18)),
+        ]),
+      );
+
+  static String _label(StudyBlockType type) => switch (type) {
+        StudyBlockType.verse => 'Verset',
+        StudyBlockType.verseRange => 'Passage',
+        StudyBlockType.verseLink => 'Référence biblique',
+        StudyBlockType.strong => 'Strong',
+        StudyBlockType.dictionary => 'Dictionnaire Vigouroux',
+        StudyBlockType.crossReferences => 'Références croisées',
+        StudyBlockType.comparison => 'Comparaison',
+        StudyBlockType.image => 'Image',
+        _ => type.name,
+      };
+  static IconData _icon(StudyBlockType type) => switch (type) {
+        StudyBlockType.strong => Icons.translate,
+        StudyBlockType.dictionary => Icons.menu_book_outlined,
+        StudyBlockType.crossReferences => Icons.account_tree,
+        StudyBlockType.comparison => Icons.compare_arrows,
+        StudyBlockType.image => Icons.image_outlined,
+        _ => Icons.menu_book,
+      };
+}
+
+class _FormattingBar extends StatelessWidget {
+  const _FormattingBar(
+      {required this.canUndo,
+      required this.canRedo,
+      required this.onStyle,
+      required this.onBold,
+      required this.onItalic,
+      required this.onUnderline,
+      required this.onMore,
+      required this.onAdd,
+      required this.onKeyboard});
+  final bool canUndo;
+  final bool canRedo;
+  final VoidCallback onStyle;
+  final VoidCallback onBold;
+  final VoidCallback onItalic;
+  final VoidCallback onUnderline;
+  final VoidCallback onMore;
+  final VoidCallback onAdd;
+  final VoidCallback onKeyboard;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        elevation: 10,
+        color: Theme.of(context).colorScheme.surface,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: Row(children: [
+            TextButton(onPressed: onStyle, child: const Text('Style')),
+            IconButton(onPressed: onBold, icon: const Icon(Icons.format_bold)),
+            IconButton(
+                onPressed: onItalic, icon: const Icon(Icons.format_italic)),
+            IconButton(
+                onPressed: onUnderline,
+                icon: const Icon(Icons.format_underlined)),
+            IconButton(
+                tooltip: 'Plus de formats',
+                onPressed: onMore,
+                icon: const Icon(Icons.more_horiz)),
+            IconButton(
+                key: const Key('insert-study-block'),
+                tooltip: 'Insérer un bloc',
+                onPressed: onAdd,
+                icon: const Icon(Icons.add_circle_outline,
+                    color: AppColors.primary)),
+            IconButton(
+                tooltip: 'Masquer le clavier',
+                onPressed: onKeyboard,
+                icon: const Icon(Icons.keyboard_hide)),
+          ]),
+        ),
+      );
 }

@@ -3,6 +3,8 @@ import 'package:echo_bible/features/bible/screens/chapter_reader_screen.dart';
 import 'package:echo_bible/features/study/models/verse_study_data.dart';
 import 'package:echo_bible/features/study/models/strong_entry.dart';
 import 'package:echo_bible/features/study/services/verse_study_service.dart';
+import 'package:echo_bible/features/study/models/personal_study.dart';
+import 'package:echo_bible/features/study/widgets/study_destination_sheet.dart';
 import 'package:flutter/material.dart';
 
 class StrongWordScreen extends StatefulWidget {
@@ -53,7 +55,16 @@ class _StrongWordScreenState extends State<StrongWordScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: Text('${word.code} · ${word.word}')),
+      appBar: AppBar(
+        title: Text('${word.code} · ${word.word}'),
+        actions: [
+          IconButton(
+            tooltip: 'Ajouter à une étude',
+            onPressed: _addToStudy,
+            icon: const Icon(Icons.playlist_add),
+          ),
+        ],
+      ),
       body: FutureBuilder<List<StrongOccurrence>>(
         future: _occurrences,
         builder: (context, snapshot) {
@@ -249,6 +260,58 @@ class _StrongWordScreenState extends State<StrongWordScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _addToStudy() async {
+    final displayMode = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Lien Strong'),
+              onTap: () => Navigator.pop(context, 'link'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.view_agenda_outlined),
+              title: const Text('Bloc Strong complet'),
+              onTap: () => Navigator.pop(context, 'block'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (displayMode == null || !mounted) return;
+    final now = DateTime.now();
+    final added = await StudyDestinationSheet.show(
+      context,
+      StudyBlock(
+        id: '${now.microsecondsSinceEpoch}-strong',
+        type: StudyBlockType.strong,
+        position: 0,
+        payload: {
+          'code': word.code,
+          'originalWord': word.originalWord ?? word.lemma ?? word.word,
+          'transliteration': word.transliteration,
+          'definition': word.frenchDefinition ??
+              word.shortDefinition ??
+              word.definition ??
+              '',
+          'language': word.inferredLanguage,
+          'displayMode': displayMode,
+        },
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    if (mounted && added) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Entrée Strong ajoutée à l’étude.')),
+      );
+    }
   }
 
   String _numberKindLabel(StrongNumberKind kind) => switch (kind) {

@@ -10,6 +10,7 @@ class VerseSelectionActionBar extends StatelessWidget {
   final VoidCallback onCopy;
   final VoidCallback onShare;
   final VoidCallback onStudy;
+  final VoidCallback? onAddToStudy;
 
   const VerseSelectionActionBar({
     super.key,
@@ -21,6 +22,7 @@ class VerseSelectionActionBar extends StatelessWidget {
     required this.onCopy,
     required this.onShare,
     required this.onStudy,
+    this.onAddToStudy,
   });
 
   @override
@@ -83,17 +85,31 @@ class VerseSelectionActionBar extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  key: const Key('study-selected-verses'),
-                  onPressed: onStudy,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      key: const Key('study-selected-verses'),
+                      onPressed: onStudy,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                      ),
+                      icon: const Icon(Icons.school_outlined),
+                      label: const Text('ÉTUDIER'),
+                    ),
                   ),
-                  icon: const Icon(Icons.school_outlined),
-                  label: const Text('ÉTUDIER'),
-                ),
+                  if (onAddToStudy != null) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: const Key('add-selected-verses-to-study'),
+                        onPressed: onAddToStudy,
+                        icon: const Icon(Icons.playlist_add),
+                        label: const Text('AJOUTER'),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),

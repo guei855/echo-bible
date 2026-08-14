@@ -5,7 +5,9 @@ import 'package:echo_bible/features/bible/models/bible_book.dart';
 import 'package:echo_bible/features/bible/screens/chapter_reader_screen.dart';
 import 'package:echo_bible/features/settings/screens/download_manager_screen.dart';
 import 'package:echo_bible/features/study/models/cross_reference.dart';
+import 'package:echo_bible/features/study/models/personal_study.dart';
 import 'package:echo_bible/features/study/repositories/cross_reference_repository.dart';
+import 'package:echo_bible/features/study/widgets/study_destination_sheet.dart';
 import 'package:echo_bible/shared/widgets/resource_install_card.dart';
 import 'package:flutter/material.dart';
 
@@ -40,6 +42,7 @@ class _CrossReferencesScreenState extends State<CrossReferencesScreen> {
   int _total = 0;
   int _limit = _pageSize;
   bool _loading = false;
+  final Set<int> _selected = {};
 
   @override
   void initState() {
@@ -107,6 +110,19 @@ class _CrossReferencesScreenState extends State<CrossReferencesScreen> {
             Expanded(child: _content()),
           ],
         ),
+        bottomNavigationBar: _selected.isEmpty
+            ? null
+            : SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: FilledButton.icon(
+                    onPressed: _addSelectedToStudy,
+                    icon: const Icon(Icons.playlist_add),
+                    label: Text(
+                        'Ajouter ${_selected.length} référence${_selected.length > 1 ? 's' : ''} à une étude'),
+                  ),
+                ),
+              ),
       );
 
   Widget _searchFields() => Padding(
@@ -173,7 +189,12 @@ class _CrossReferencesScreenState extends State<CrossReferencesScreen> {
             horizontal: 20,
             vertical: 6,
           ),
-          leading: const Icon(Icons.account_tree_outlined),
+          leading: Checkbox(
+            value: _selected.contains(index - 1),
+            onChanged: (_) => setState(() {
+              if (!_selected.add(index - 1)) _selected.remove(index - 1);
+            }),
+          ),
           title: Text(
             '${reference.bookName} '
             '${reference.chapter}:${reference.verseLabel}',
@@ -214,6 +235,46 @@ class _CrossReferencesScreenState extends State<CrossReferencesScreen> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _addSelectedToStudy() async {
+    final references = _references ?? const <CrossReference>[];
+    final chosen = _selected
+        .where((index) => index >= 0 && index < references.length)
+        .map((index) => references[index])
+        .toList();
+    if (chosen.isEmpty) return;
+    final now = DateTime.now();
+    final added = await StudyDestinationSheet.show(
+      context,
+      StudyBlock(
+        id: '${now.microsecondsSinceEpoch}-cross-references',
+        type: StudyBlockType.crossReferences,
+        position: 0,
+        payload: {
+          'translationId': widget.sourceVersionId,
+          'bookId': widget.sourceBook,
+          'bookName': widget.sourceBookName,
+          'chapter': widget.sourceChapter,
+          'verseStart': widget.sourceVerse,
+          'verseEnd': widget.sourceVerse,
+          'reference': widget.sourceBookName == null
+              ? null
+              : '${widget.sourceBookName} ${widget.sourceChapter}:${widget.sourceVerse}',
+          'references': chosen
+              .map((item) =>
+                  '${item.bookName} ${item.chapter}:${item.verseLabel} — ${item.text}')
+              .toList(),
+        },
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    if (!mounted || !added) return;
+    setState(_selected.clear);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Références ajoutées à l’étude.')),
     );
   }
 
