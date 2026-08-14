@@ -70,7 +70,7 @@ class StudyBlock {
   });
 
   String get plainText => switch (type) {
-        StudyBlockType.text ||
+        StudyBlockType.text => _plainTextPayload(payload),
         StudyBlockType.heading ||
         StudyBlockType.quote =>
           payload['text'] as String? ?? '',
@@ -114,6 +114,18 @@ class StudyBlock {
       );
 
   String encodePayload() => jsonEncode(payload);
+
+  static String _plainTextPayload(Map<String, Object?> payload) {
+    final delta = payload['delta'];
+    if (delta is! List) return payload['text'] as String? ?? '';
+    final buffer = StringBuffer();
+    for (final operation in delta) {
+      if (operation is Map && operation['insert'] is String) {
+        buffer.write(operation['insert']);
+      }
+    }
+    return buffer.toString().replaceFirst(RegExp(r'\n$'), '').trimRight();
+  }
 
   static Map<String, Object?> decodePayload(String? value) {
     if (value == null || value.trim().isEmpty) return const {};

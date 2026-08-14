@@ -151,9 +151,26 @@ void main() {
       primaryReference: 'Éphésiens 2:8-10',
       blocks: [
         StudyBlock(
+          id: 'rich',
+          type: StudyBlockType.text,
+          position: 0,
+          payload: const {
+            'format': 'quill_delta_v1',
+            'delta': [
+              {
+                'insert': 'La grâce par la foi',
+                'attributes': {'bold': true, 'color': '#B91C1C'}
+              },
+              {'insert': '\n'}
+            ],
+          },
+          createdAt: now,
+          updatedAt: now,
+        ),
+        StudyBlock(
           id: 'verse',
           type: StudyBlockType.verse,
-          position: 0,
+          position: 1,
           payload: const {
             'translationId': 1,
             'reference': 'Jean 3:16 — LSG',
@@ -169,6 +186,44 @@ void main() {
     final text = StudyExportService.renderText(study);
     expect(text, contains('LA GRÂCE DE DIEU'));
     expect(text, contains('Jean 3:16'));
+    expect(text, contains('La grâce par la foi'));
     expect(text, isNot(contains('translationId')));
+    expect(text, isNot(contains('quill_delta_v1')));
+    expect(text, isNot(contains('#B91C1C')));
+  });
+
+  test('persiste et rouvre un Delta riche sans perte', () async {
+    final db = await openStudyDatabase();
+    addTearDown(db.close);
+    final repository =
+        PersonalStudyRepository(databaseProvider: () async => db);
+    final now = DateTime.now();
+    const payload = <String, Object?>{
+      'format': 'quill_delta_v1',
+      'delta': [
+        {
+          'insert': 'Foi',
+          'attributes': {'bold': true, 'background': '#FFF59D'}
+        },
+        {
+          'insert': '\n',
+          'attributes': {'align': 'center'}
+        },
+      ],
+    };
+    final created = await repository.create(initialBlocks: [
+      StudyBlock(
+        id: 'rich-persisted',
+        type: StudyBlockType.text,
+        position: 0,
+        payload: payload,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    ]);
+
+    final reopened = await repository.load(created.id);
+    expect(reopened!.blocks.single.payload, payload);
+    expect(reopened.content, 'Foi');
   });
 }

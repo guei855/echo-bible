@@ -16,7 +16,10 @@ import 'package:echo_bible/features/study/repositories/strong_repository.dart';
 import 'package:echo_bible/features/study/screens/strong_word_screen.dart';
 import 'package:echo_bible/features/study/services/personal_study_service.dart';
 import 'package:echo_bible/features/study/services/study_export_service.dart';
+import 'package:echo_bible/features/study/services/study_rich_text_codec.dart';
+import 'package:echo_bible/features/study/widgets/study_rich_toolbar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 
 class PersonalStudyEditorScreen extends StatefulWidget {
   const PersonalStudyEditorScreen({
@@ -24,10 +27,12 @@ class PersonalStudyEditorScreen extends StatefulWidget {
     required this.study,
     this.saveDocument,
     this.autosaveDelay = const Duration(milliseconds: 700),
+    this.onActiveController,
   });
   final PersonalStudy study;
   final Future<void> Function(PersonalStudy study)? saveDocument;
   final Duration autosaveDelay;
+  final ValueChanged<QuillController>? onActiveController;
 
   @override
   State<PersonalStudyEditorScreen> createState() =>
@@ -38,11 +43,14 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     with WidgetsBindingObserver {
   late PersonalStudy _study;
   late final TextEditingController _title;
-  final Map<String, TextEditingController> _controllers = {};
+  final Map<String, QuillController> _controllers = {};
+  final Map<String, FocusNode> _focusNodes = {};
+  final Map<String, StreamSubscription<dynamic>> _documentSubscriptions = {};
   final List<List<StudyBlock>> _undo = [];
   final List<List<StudyBlock>> _redo = [];
   Timer? _saveTimer;
   String? _activeBlockId;
+  String? _selectedSpecialBlockId;
   bool _saving = false;
   bool _saved = true;
 
@@ -50,9 +58,15 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _study = widget.study;
+    final normalized = StudyRichTextCodec.normalizeBlocks(widget.study.blocks);
+    final migrated = normalized.length != widget.study.blocks.length ||
+        widget.study.blocks.any((block) =>
+            StudyRichTextCodec.isLegacyText(block) &&
+            !StudyRichTextCodec.isRichText(block));
+    _study = widget.study.copyWith(blocks: normalized);
     _title = TextEditingController(text: _study.title)..addListener(_changed);
     _syncControllers();
+    if (migrated) _changed();
   }
 
   @override
@@ -70,49 +84,75 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     _saveTimer?.cancel();
     _title.removeListener(_changed);
     _title.dispose();
+    for (final subscription in _documentSubscriptions.values) {
+      subscription.cancel();
+    }
     for (final controller in _controllers.values) {
       controller.dispose();
+    }
+    for (final focusNode in _focusNodes.values) {
+      focusNode.dispose();
     }
     super.dispose();
   }
 
   void _syncControllers() {
-    final ids = _study.blocks.map((block) => block.id).toSet();
+    final ids = _study.blocks
+        .where(StudyRichTextCodec.isRichText)
+        .map((block) => block.id)
+        .toSet();
     for (final id
         in _controllers.keys.where((id) => !ids.contains(id)).toList()) {
+      _documentSubscriptions.remove(id)?.cancel();
       _controllers.remove(id)?.dispose();
+      _focusNodes.remove(id)?.dispose();
     }
-    for (final block in _study.blocks.where(_isEditable)) {
+    for (final block in _study.blocks.where(StudyRichTextCodec.isRichText)) {
       _controllers.putIfAbsent(block.id, () {
-        final controller = TextEditingController(
-          text: block.payload['text'] as String? ?? '',
+        final controller = QuillController(
+          document: StudyRichTextCodec.documentFromBlock(block),
+          selection: const TextSelection.collapsed(offset: 0),
         );
-        controller.addListener(() => _onBlockText(block.id, controller.text));
+        _documentSubscriptions[block.id] = controller.document.changes
+            .listen((_) => _onDocumentChanged(block.id));
+        final focusNode = FocusNode(debugLabel: 'study-rich-${block.id}');
+        focusNode.addListener(() {
+          if (!focusNode.hasFocus) return;
+          setState(() {
+            _activeBlockId = block.id;
+            _selectedSpecialBlockId = null;
+          });
+          widget.onActiveController?.call(controller);
+        });
+        _focusNodes[block.id] = focusNode;
         return controller;
       });
     }
+    _activeBlockId ??= ids.isEmpty ? null : ids.first;
+    final active = _activeController;
+    if (active != null) widget.onActiveController?.call(active);
   }
 
-  bool _isEditable(StudyBlock block) =>
-      block.type == StudyBlockType.text ||
-      block.type == StudyBlockType.heading ||
-      block.type == StudyBlockType.quote;
-
-  void _onBlockText(String id, String text) {
+  void _onDocumentChanged(String id) {
     final index = _study.blocks.indexWhere((block) => block.id == id);
-    if (index < 0 || _study.blocks[index].payload['text'] == text) return;
+    final controller = _controllers[id];
+    if (index < 0 || controller == null) return;
     final blocks = [..._study.blocks];
     blocks[index] = blocks[index].copyWith(
-      payload: {...blocks[index].payload, 'text': text},
+      payload: StudyRichTextCodec.payloadFromDocument(controller.document),
       updatedAt: DateTime.now(),
     );
     _study = _study.copyWith(blocks: blocks);
-    _changed();
+    _changed(rebuild: false);
   }
 
-  void _changed() {
+  void _changed({bool rebuild = true}) {
     _saveTimer?.cancel();
-    if (mounted) setState(() => _saved = false);
+    if (mounted && _saved) {
+      setState(() => _saved = false);
+    } else if (mounted && rebuild) {
+      setState(() {});
+    }
     _saveTimer = Timer(widget.autosaveDelay, _saveNow);
   }
 
@@ -122,7 +162,21 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     if (mounted) setState(() => _saving = true);
     final title =
         _title.text.trim().isEmpty ? 'Document sans titre' : _title.text.trim();
-    final snapshot = _study.copyWith(title: title, updatedAt: DateTime.now());
+    final blocks = [
+      for (final block in _study.blocks)
+        if (_controllers[block.id] case final controller?)
+          block.copyWith(
+            payload:
+                StudyRichTextCodec.payloadFromDocument(controller.document),
+          )
+        else
+          block,
+    ];
+    final snapshot = _study.copyWith(
+      title: title,
+      blocks: blocks,
+      updatedAt: DateTime.now(),
+    );
     try {
       await (widget.saveDocument ??
           PersonalStudyService.saveDocument)(snapshot);
@@ -181,6 +235,19 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
             PopupMenuButton<String>(
               onSelected: _documentAction,
               itemBuilder: (_) => [
+                const PopupMenuItem(value: 'rename', child: Text('Renommer')),
+                const PopupMenuItem(
+                    value: 'duplicate', child: Text('Dupliquer')),
+                PopupMenuItem(
+                  value: 'favorite',
+                  child: Text(_study.isFavorite
+                      ? 'Retirer des favoris'
+                      : 'Ajouter aux favoris'),
+                ),
+                PopupMenuItem(
+                  value: 'pin',
+                  child: Text(_study.isPinned ? 'Désépingler' : 'Épingler'),
+                ),
                 const PopupMenuItem(
                     value: 'metadata', child: Text('Référence et tags')),
                 PopupMenuItem(
@@ -191,6 +258,9 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
                 ),
                 const PopupMenuItem(
                     value: 'export', child: Text('Exporter / partager')),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                    value: 'delete', child: Text('Supprimer le document')),
               ],
             ),
           ],
@@ -200,41 +270,69 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
             if (_study.primaryReference?.isNotEmpty ?? false)
               _ReferenceBanner(reference: _study.primaryReference!),
             Expanded(
-              child: ReorderableListView.builder(
-                key: const Key('study-block-list'),
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 100),
-                buildDefaultDragHandles: false,
-                itemCount: _study.blocks.length,
-                onReorderItem: _reorder,
-                itemBuilder: (context, index) {
-                  final block = _study.blocks[index];
-                  return _BlockEditor(
-                    key: ValueKey(block.id),
-                    block: block,
-                    index: index,
-                    controller: _controllers[block.id],
-                    onEditingTap: () => _activeBlockId = block.id,
-                    onTap: () => _openBlock(block),
-                    onDelete: () => _deleteBlock(index),
-                  );
-                },
+              child: LayoutBuilder(
+                builder: (context, constraints) => ListView.builder(
+                  key: const Key('study-block-list'),
+                  padding: const EdgeInsets.only(bottom: 96),
+                  itemCount: _study.blocks.length,
+                  itemBuilder: (context, index) {
+                    final block = _study.blocks[index];
+                    if (StudyRichTextCodec.isRichText(block)) {
+                      final controller = _controllers[block.id]!;
+                      return QuillEditor.basic(
+                        key: Key('study-rich-editor-${block.id}'),
+                        controller: controller,
+                        focusNode: _focusNodes[block.id],
+                        config: QuillEditorConfig(
+                          scrollable: false,
+                          expands: false,
+                          autoFocus: index == 0 &&
+                              controller.document.toPlainText().trim().isEmpty,
+                          minHeight: index == _study.blocks.length - 1
+                              ? constraints.maxHeight * .62
+                              : 72,
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                          placeholder: 'Écrivez votre étude…',
+                          enableAlwaysIndentOnTab: true,
+                        ),
+                      );
+                    }
+                    return _SpecialStudyBlock(
+                      key: ValueKey(block.id),
+                      block: block,
+                      selected: _selectedSpecialBlockId == block.id,
+                      onOpen: () => _openBlock(block),
+                      onSelect: () => setState(
+                        () => _selectedSpecialBlockId = block.id,
+                      ),
+                      onDelete: () => _deleteBlock(index),
+                      onMoveUp: index > 0 ? () => _moveBlock(index, -1) : null,
+                      onMoveDown: index < _study.blocks.length - 1
+                          ? () => _moveBlock(index, 1)
+                          : null,
+                    );
+                  },
+                ),
               ),
             ),
           ],
         ),
         bottomNavigationBar: SafeArea(
           top: false,
-          child: _FormattingBar(
-            canUndo: _undo.isNotEmpty,
-            canRedo: _redo.isNotEmpty,
-            onStyle: _chooseStyle,
-            onBold: () => _wrapSelection('**', '**'),
-            onItalic: () => _wrapSelection('_', '_'),
-            onUnderline: () => _wrapSelection('<u>', '</u>'),
-            onMore: _moreFormatting,
-            onAdd: _showInsertMenu,
-            onKeyboard: () => FocusManager.instance.primaryFocus?.unfocus(),
-          ),
+          child: _activeController == null
+              ? const SizedBox.shrink()
+              : StudyRichToolbar(
+                  controller: _activeController!,
+                  onInsert: _showInsertMenu,
+                  onDivider: () =>
+                      _insertBlock(StudyBlockType.divider, const {}),
+                  onHideKeyboard: () =>
+                      FocusManager.instance.primaryFocus?.unfocus(),
+                  onUndoBlocks: _undoBlocks,
+                  onRedoBlocks: _redoBlocks,
+                  canUndoBlocks: _undo.isNotEmpty,
+                  canRedoBlocks: _redo.isNotEmpty,
+                ),
         ),
       ),
     );
@@ -247,18 +345,20 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   }
 
   void _replaceBlocks(List<StudyBlock> blocks) {
+    final normalized = StudyRichTextCodec.normalizeBlocks(blocks);
     setState(() {
-      _study = _study.copyWith(blocks: blocks);
+      _study = _study.copyWith(blocks: normalized);
       _syncControllers();
     });
     _changed();
   }
 
-  void _reorder(int oldIndex, int newIndex) {
+  void _moveBlock(int index, int delta) {
+    final newIndex = index + delta;
+    if (newIndex < 0 || newIndex >= _study.blocks.length) return;
     _remember();
-    if (newIndex > oldIndex) newIndex--;
     final blocks = [..._study.blocks];
-    blocks.insert(newIndex, blocks.removeAt(oldIndex));
+    blocks.insert(newIndex, blocks.removeAt(index));
     _replaceBlocks([
       for (var index = 0; index < blocks.length; index++)
         blocks[index].copyWith(position: index, updatedAt: DateTime.now()),
@@ -282,12 +382,13 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     ));
   }
 
-  TextEditingController? get _activeController {
+  QuillController? get _activeController {
     final active = _controllers[_activeBlockId];
     if (active != null) return active;
     return _controllers.values.isEmpty ? null : _controllers.values.last;
   }
 
+  /* Legacy markup toolbar removed in V1.1.
   void _wrapSelection(String before, String after) {
     final controller = _activeController;
     if (controller == null) return;
@@ -437,6 +538,7 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
         ),
       );
 
+  */
   void _undoBlocks() {
     if (_undo.isEmpty) return;
     _redo.add([..._study.blocks]);
@@ -459,8 +561,6 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
         shrinkWrap: true,
         children: [
           const ListTile(title: Text('Insérer dans l’étude')),
-          _insertTile(
-              context, StudyBlockType.text, Icons.text_fields, 'Bloc de texte'),
           _insertTile(context, StudyBlockType.verse, Icons.menu_book, 'Verset'),
           _insertTile(context, StudyBlockType.verseRange, Icons.library_books,
               'Passage'),
@@ -482,15 +582,8 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
       ),
     );
     if (type == null) return;
-    if (type == StudyBlockType.text || type == StudyBlockType.divider) {
-      _insertBlock(
-          type,
-          type == StudyBlockType.text
-              ? const {
-                  'text': '',
-                  'style': {'name': 'normal'}
-                }
-              : const {});
+    if (type == StudyBlockType.divider) {
+      _insertBlock(type, const {});
     } else if (type == StudyBlockType.strong) {
       await _insertStrong();
     } else if (type == StudyBlockType.dictionary) {
@@ -513,17 +606,25 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   void _insertBlock(StudyBlockType type, Map<String, Object?> payload) {
     _remember();
     final now = DateTime.now();
-    final blocks = [
-      ..._study.blocks,
+    final blocks = [..._study.blocks];
+    final activeIndex =
+        blocks.indexWhere((block) => block.id == _activeBlockId);
+    final insertAt = activeIndex < 0 ? blocks.length : activeIndex + 1;
+    blocks.insert(
+      insertAt,
       StudyBlock(
         id: '${now.microsecondsSinceEpoch}-${_study.blocks.length}',
         type: type,
-        position: _study.blocks.length,
+        position: insertAt,
         payload: payload,
         createdAt: now,
         updatedAt: now,
-      )
-    ];
+      ),
+    );
+    blocks.insert(
+      insertAt + 1,
+      StudyRichTextCodec.emptyBlock(now, position: insertAt + 1),
+    );
     _replaceBlocks(blocks);
   }
 
@@ -981,6 +1082,52 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   }
 
   Future<void> _documentAction(String action) async {
+    if (action == 'rename') {
+      final value = await _ask('Renommer le document', _title.text);
+      if (value == null) return;
+      _title.text = value;
+      _title.selection = TextSelection.collapsed(offset: value.length);
+      return;
+    }
+    if (action == 'duplicate') {
+      await _saveNow();
+      await PersonalStudyService.duplicate(_study);
+      if (mounted) _message('Copie créée.');
+      return;
+    }
+    if (action == 'favorite') {
+      _study = _study.copyWith(isFavorite: !_study.isFavorite);
+      _changed();
+      return;
+    }
+    if (action == 'pin') {
+      _study = _study.copyWith(isPinned: !_study.isPinned);
+      _changed();
+      return;
+    }
+    if (action == 'delete') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Supprimer ce document ?'),
+          content: const Text('Cette action supprimera aussi ses blocs.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Supprimer'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      await PersonalStudyService.delete(_study.id);
+      if (mounted) Navigator.pop(context, true);
+      return;
+    }
     if (action == 'metadata') {
       final reference = TextEditingController(text: _study.primaryReference);
       final tags = TextEditingController(text: _study.tags.join(', '));
@@ -1058,6 +1205,170 @@ class _ReferenceBanner extends StatelessWidget {
       );
 }
 
+class _SpecialStudyBlock extends StatelessWidget {
+  const _SpecialStudyBlock({
+    super.key,
+    required this.block,
+    required this.selected,
+    required this.onOpen,
+    required this.onSelect,
+    required this.onDelete,
+    this.onMoveUp,
+    this.onMoveDown,
+  });
+
+  final StudyBlock block;
+  final bool selected;
+  final VoidCallback onOpen;
+  final VoidCallback onSelect;
+  final VoidCallback onDelete;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    if (block.type == StudyBlockType.divider) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: onSelect,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Column(
+            children: [
+              Divider(color: selected ? colors.primary : null),
+              if (selected) _actions(context),
+            ],
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Material(
+        color: _background(colors),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(
+            color: selected ? colors.primary : colors.outlineVariant,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: InkWell(
+          onTap: onOpen,
+          onLongPress: onSelect,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(_icon, size: 18, color: colors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _label,
+                        style: TextStyle(
+                          color: colors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (block.plainText.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    block.plainText,
+                    maxLines: 8,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                if (selected) ...[
+                  const SizedBox(height: 8),
+                  _actions(context),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actions(BuildContext context) => Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton.icon(
+            onPressed: onOpen,
+            icon: const Icon(Icons.open_in_new, size: 18),
+            label: const Text('Ouvrir'),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Actions du bloc',
+            onSelected: (value) {
+              if (value == 'up') onMoveUp?.call();
+              if (value == 'down') onMoveDown?.call();
+              if (value == 'delete') onDelete();
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'up',
+                enabled: onMoveUp != null,
+                child: const Text('Déplacer vers le haut'),
+              ),
+              PopupMenuItem(
+                value: 'down',
+                enabled: onMoveDown != null,
+                child: const Text('Déplacer vers le bas'),
+              ),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Text('Supprimer'),
+              ),
+            ],
+          ),
+        ],
+      );
+
+  Color _background(ColorScheme colors) => switch (block.type) {
+        StudyBlockType.verse ||
+        StudyBlockType.verseRange =>
+          colors.primaryContainer.withValues(alpha: .34),
+        StudyBlockType.strong =>
+          colors.tertiaryContainer.withValues(alpha: .38),
+        StudyBlockType.dictionary =>
+          colors.secondaryContainer.withValues(alpha: .38),
+        _ => colors.surfaceContainerLow,
+      };
+
+  String get _label => switch (block.type) {
+        StudyBlockType.verse => 'Verset',
+        StudyBlockType.verseRange => 'Passage biblique',
+        StudyBlockType.verseLink => 'Référence biblique',
+        StudyBlockType.strong => 'Strong',
+        StudyBlockType.dictionary => 'Dictionnaire Vigouroux',
+        StudyBlockType.crossReferences => 'Références croisées',
+        StudyBlockType.comparison => 'Comparaison de versions',
+        StudyBlockType.image => 'Image',
+        _ => 'Ressource',
+      };
+
+  IconData get _icon => switch (block.type) {
+        StudyBlockType.verse || StudyBlockType.verseRange => Icons.menu_book,
+        StudyBlockType.verseLink => Icons.link,
+        StudyBlockType.strong => Icons.translate,
+        StudyBlockType.dictionary => Icons.menu_book_outlined,
+        StudyBlockType.crossReferences => Icons.account_tree,
+        StudyBlockType.comparison => Icons.compare_arrows,
+        StudyBlockType.image => Icons.image_outlined,
+        _ => Icons.widgets_outlined,
+      };
+}
+
+// ignore: unused_element
 class _BlockEditor extends StatelessWidget {
   const _BlockEditor(
       {required super.key,
@@ -1182,6 +1493,7 @@ class _BlockEditor extends StatelessWidget {
       };
 }
 
+// ignore: unused_element
 class _FormattingBar extends StatelessWidget {
   const _FormattingBar(
       {required this.canUndo,
