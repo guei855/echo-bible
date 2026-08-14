@@ -3,12 +3,33 @@ import 'package:echo_bible/features/study/models/personal_study.dart';
 import 'package:echo_bible/features/study/screens/personal_study_editor_screen.dart';
 import 'package:echo_bible/features/study/services/personal_study_service.dart';
 import 'package:echo_bible/features/study/services/study_export_service.dart';
+import 'package:echo_bible/features/study/widgets/study_creation_sheet.dart';
 import 'package:flutter/material.dart';
 
 enum _StudyFilter { all, studies, sermons, meditations, drafts, favorites }
 
+typedef PersonalStudiesLoader = Future<List<PersonalStudy>> Function({
+  String query,
+});
+typedef StudyCreationLauncher = Future<PersonalStudy?> Function(
+  BuildContext context,
+);
+typedef PersonalStudyEditorBuilder = Widget Function(
+  PersonalStudy study,
+  bool focusOnOpen,
+);
+
 class PersonalStudiesScreen extends StatefulWidget {
-  const PersonalStudiesScreen({super.key});
+  const PersonalStudiesScreen({
+    super.key,
+    this.loadStudies,
+    this.launchCreation,
+    this.editorBuilder,
+  });
+
+  final PersonalStudiesLoader? loadStudies;
+  final StudyCreationLauncher? launchCreation;
+  final PersonalStudyEditorBuilder? editorBuilder;
 
   @override
   State<PersonalStudiesScreen> createState() => _PersonalStudiesScreenState();
@@ -16,8 +37,14 @@ class PersonalStudiesScreen extends StatefulWidget {
 
 class _PersonalStudiesScreenState extends State<PersonalStudiesScreen> {
   final _search = TextEditingController();
-  late Future<List<PersonalStudy>> _studies = PersonalStudyService.loadAll();
+  late Future<List<PersonalStudy>> _studies;
   _StudyFilter _filter = _StudyFilter.all;
+
+  @override
+  void initState() {
+    super.initState();
+    _studies = _loadStudies();
+  }
 
   @override
   void dispose() {
@@ -26,8 +53,12 @@ class _PersonalStudiesScreenState extends State<PersonalStudiesScreen> {
   }
 
   void _refresh() => setState(() {
-        _studies = PersonalStudyService.loadAll(query: _search.text);
+        _studies = _loadStudies();
       });
+
+  Future<List<PersonalStudy>> _loadStudies() =>
+      widget.loadStudies?.call(query: _search.text) ??
+      PersonalStudyService.loadAll(query: _search.text);
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -130,93 +161,26 @@ class _PersonalStudiesScreenState extends State<PersonalStudiesScreen> {
       };
 
   Future<void> _create() async {
-    var selected = StudyDocumentType.free;
-    var useTemplate = false;
-    final title = TextEditingController(text: 'Document sans titre');
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            0,
-            20,
-            20 + MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Nouvelle étude',
-                  style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              TextField(
-                key: const Key('new-study-title'),
-                controller: title,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Titre',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<StudyDocumentType>(
-                initialValue: selected,
-                decoration: const InputDecoration(
-                  labelText: 'Type de document',
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  for (final type in StudyDocumentType.values)
-                    DropdownMenuItem(value: type, child: Text(type.label)),
-                ],
-                onChanged: (value) =>
-                    setSheetState(() => selected = value ?? selected),
-              ),
-              if (selected != StudyDocumentType.free)
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Utiliser le modèle proposé'),
-                  value: useTemplate,
-                  onChanged: (value) =>
-                      setSheetState(() => useTemplate = value),
-                ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  key: const Key('create-study'),
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Créer'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (result != true) {
-      title.dispose();
-      return;
-    }
-    final study = await PersonalStudyService.create(
-      title: title.text,
-      type: selected,
-      useTemplate: useTemplate,
-    );
-    title.dispose();
-    if (!mounted) return;
-    await _open(study);
+    final study = await (widget.launchCreation?.call(context) ??
+        StudyCreationSheet.show(context));
+    if (!mounted || study == null) return;
+    await _open(study, focusOnOpen: true);
   }
 
-  Future<void> _open(PersonalStudy study) async {
+  Future<void> _open(
+    PersonalStudy study, {
+    bool focusOnOpen = false,
+  }) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
-          builder: (_) => PersonalStudyEditorScreen(study: study)),
+        builder: (_) =>
+            widget.editorBuilder?.call(study, focusOnOpen) ??
+            PersonalStudyEditorScreen(
+              study: study,
+              focusOnOpen: focusOnOpen,
+            ),
+      ),
     );
     if (mounted) _refresh();
   }

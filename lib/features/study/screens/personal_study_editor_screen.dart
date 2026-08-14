@@ -33,12 +33,18 @@ class PersonalStudyEditorScreen extends StatefulWidget {
     this.autosaveDelay = const Duration(milliseconds: 700),
     this.onActiveController,
     this.onActiveFocusNode,
+    this.focusOnOpen = false,
+    this.openingBlockId,
+    this.openingMessage,
   });
   final PersonalStudy study;
   final Future<void> Function(PersonalStudy study)? saveDocument;
   final Duration autosaveDelay;
   final ValueChanged<QuillController>? onActiveController;
   final ValueChanged<FocusNode>? onActiveFocusNode;
+  final bool focusOnOpen;
+  final String? openingBlockId;
+  final String? openingMessage;
 
   @override
   State<PersonalStudyEditorScreen> createState() =>
@@ -52,10 +58,13 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   final Map<String, QuillController> _controllers = {};
   final Map<String, FocusNode> _focusNodes = {};
   final Map<String, StreamSubscription<dynamic>> _documentSubscriptions = {};
+  final Map<String, GlobalKey> _blockKeys = {};
   final List<List<StudyBlock>> _undo = [];
   final List<List<StudyBlock>> _redo = [];
+  final ScrollController _scrollController = ScrollController();
   Timer? _saveTimer;
   Timer? _snackBarTimer;
+  Timer? _highlightTimer;
   Future<void>? _saveInFlight;
   String? _activeBlockId;
   String? _selectedSpecialBlockId;
@@ -63,6 +72,7 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   bool _saved = true;
   bool _finishing = false;
   int _revision = 0;
+  String? _highlightedBlockId;
 
   @override
   void initState() {
@@ -76,6 +86,12 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     _study = widget.study.copyWith(blocks: normalized);
     _title = TextEditingController(text: _study.title)..addListener(_changed);
     _syncControllers();
+    if (widget.openingBlockId case final blockId?) {
+      _highlightedBlockId = blockId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_revealOpeningBlock(blockId));
+      });
+    }
     if (migrated) _changed();
   }
 
@@ -93,6 +109,8 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     WidgetsBinding.instance.removeObserver(this);
     _saveTimer?.cancel();
     _snackBarTimer?.cancel();
+    _highlightTimer?.cancel();
+    _scrollController.dispose();
     _title.removeListener(_changed);
     _title.dispose();
     for (final subscription in _documentSubscriptions.values) {
@@ -332,13 +350,15 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
               child: LayoutBuilder(
                 builder: (context, constraints) => ListView.builder(
                   key: const Key('study-block-list'),
+                  controller: _scrollController,
                   padding: const EdgeInsets.only(bottom: 96),
                   itemCount: _study.blocks.length,
                   itemBuilder: (context, index) {
                     final block = _study.blocks[index];
+                    late final Widget child;
                     if (StudyRichTextCodec.isRichText(block)) {
                       final controller = _controllers[block.id]!;
-                      return QuillEditor.basic(
+                      child = QuillEditor.basic(
                         key: Key('study-rich-editor-${block.id}'),
                         controller: controller,
                         focusNode: _focusNodes[block.id],
@@ -346,7 +366,11 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
                           scrollable: false,
                           expands: false,
                           autoFocus: index == 0 &&
-                              controller.document.toPlainText().trim().isEmpty,
+                              (widget.focusOnOpen ||
+                                  controller.document
+                                      .toPlainText()
+                                      .trim()
+                                      .isEmpty),
                           minHeight: index == _study.blocks.length - 1
                               ? constraints.maxHeight * .62
                               : 72,
@@ -355,20 +379,34 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
                           enableAlwaysIndentOnTab: true,
                         ),
                       );
+                    } else {
+                      child = _SpecialStudyBlock(
+                        key: ValueKey(block.id),
+                        block: block,
+                        selected: _selectedSpecialBlockId == block.id,
+                        onOpen: () => _openBlock(block),
+                        onSelect: () => setState(
+                          () => _selectedSpecialBlockId = block.id,
+                        ),
+                        onDelete: () => _deleteBlock(index),
+                        onMoveUp:
+                            index > 0 ? () => _moveBlock(index, -1) : null,
+                        onMoveDown: index < _study.blocks.length - 1
+                            ? () => _moveBlock(index, 1)
+                            : null,
+                      );
                     }
-                    return _SpecialStudyBlock(
-                      key: ValueKey(block.id),
-                      block: block,
-                      selected: _selectedSpecialBlockId == block.id,
-                      onOpen: () => _openBlock(block),
-                      onSelect: () => setState(
-                        () => _selectedSpecialBlockId = block.id,
+                    final highlighted = _highlightedBlockId == block.id;
+                    return AnimatedContainer(
+                      key: _blockKeys.putIfAbsent(block.id, GlobalKey.new),
+                      duration: const Duration(milliseconds: 220),
+                      decoration: BoxDecoration(
+                        color: highlighted
+                            ? colors.primaryContainer.withValues(alpha: .48)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      onDelete: () => _deleteBlock(index),
-                      onMoveUp: index > 0 ? () => _moveBlock(index, -1) : null,
-                      onMoveDown: index < _study.blocks.length - 1
-                          ? () => _moveBlock(index, 1)
-                          : null,
+                      child: child,
                     );
                   },
                 ),
@@ -405,6 +443,50 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _revealOpeningBlock(String blockId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!mounted) return;
+    if (_scrollController.hasClients) {
+      await _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    if (!mounted) return;
+    final blockContext = _blockKeys[blockId]?.currentContext;
+    if (blockContext != null && blockContext.mounted) {
+      await Scrollable.ensureVisible(
+        blockContext,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: .35,
+      );
+    }
+    if (!mounted) return;
+    if (widget.openingMessage case final message?) {
+      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          MediaQuery.viewInsetsOf(context).bottom +
+              MediaQuery.paddingOf(context).bottom +
+              StudyRichToolbar.height +
+              8,
+        ),
+      ));
+    }
+    _highlightTimer?.cancel();
+    _highlightTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (mounted) setState(() => _highlightedBlockId = null);
+    });
   }
 
   void _remember() {

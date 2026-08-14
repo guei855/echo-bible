@@ -87,7 +87,7 @@ class DictionaryDetailScreen extends StatelessWidget {
     final excerpt = entry.content.length > 420
         ? '${entry.content.substring(0, 420)}…'
         : entry.content;
-    final added = await StudyDestinationSheet.show(
+    final study = await StudyDestinationSheet.show(
       context,
       StudyBlock(
         id: '${now.microsecondsSinceEpoch}-dictionary',
@@ -105,7 +105,7 @@ class DictionaryDetailScreen extends StatelessWidget {
         updatedAt: now,
       ),
     );
-    if (context.mounted && added) {
+    if (context.mounted && study != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Définition ajoutée à l’étude.')),
       );

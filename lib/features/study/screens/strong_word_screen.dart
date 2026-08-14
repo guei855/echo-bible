@@ -332,7 +332,7 @@ class _StrongWordScreenState extends State<StrongWordScreen> {
     );
     if (displayMode == null || !mounted) return;
     final now = DateTime.now();
-    final added = await StudyDestinationSheet.show(
+    final study = await StudyDestinationSheet.show(
       context,
       StudyBlock(
         id: '${now.microsecondsSinceEpoch}-strong',
@@ -353,7 +353,7 @@ class _StrongWordScreenState extends State<StrongWordScreen> {
         updatedAt: now,
       ),
     );
-    if (mounted && added) {
+    if (mounted && study != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Entrée Strong ajoutée à l’étude.')),
       );

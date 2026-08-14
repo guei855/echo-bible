@@ -50,6 +50,7 @@ class PersonalStudyRepository {
     StudyDocumentType type = StudyDocumentType.free,
     bool useTemplate = false,
     List<StudyBlock>? initialBlocks,
+    String? primaryReference,
   }) async {
     final db = await _databaseProvider();
     final now = DateTime.now();
@@ -58,7 +59,9 @@ class PersonalStudyRepository {
     final id = await db.insert('study_documents', {
       'title': title.trim().isEmpty ? 'Document sans titre' : title.trim(),
       'document_type': type.databaseValue,
-      'primary_reference': null,
+      'primary_reference': primaryReference?.trim().isEmpty == true
+          ? null
+          : primaryReference?.trim(),
       'tags_json': '[]',
       'metadata_json': '{}',
       'status': StudyStatus.draft.databaseValue,
@@ -72,6 +75,7 @@ class PersonalStudyRepository {
       title: title.trim().isEmpty ? 'Document sans titre' : title.trim(),
       type: type,
       blocks: blocks,
+      primaryReference: primaryReference,
       createdAt: now,
       updatedAt: now,
     );
@@ -322,12 +326,14 @@ class PersonalStudyService {
     StudyDocumentType type = StudyDocumentType.free,
     bool useTemplate = false,
     List<StudyBlock>? initialBlocks,
+    String? primaryReference,
   }) =>
       repository.create(
         title: title,
         type: type,
         useTemplate: useTemplate,
         initialBlocks: initialBlocks,
+        primaryReference: primaryReference,
       );
   static Future<void> saveDocument(PersonalStudy study) =>
       repository.save(study);

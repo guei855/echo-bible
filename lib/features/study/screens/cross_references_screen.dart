@@ -246,7 +246,7 @@ class _CrossReferencesScreenState extends State<CrossReferencesScreen> {
         .toList();
     if (chosen.isEmpty) return;
     final now = DateTime.now();
-    final added = await StudyDestinationSheet.show(
+    final study = await StudyDestinationSheet.show(
       context,
       StudyBlock(
         id: '${now.microsecondsSinceEpoch}-cross-references',
@@ -271,7 +271,7 @@ class _CrossReferencesScreenState extends State<CrossReferencesScreen> {
         updatedAt: now,
       ),
     );
-    if (!mounted || !added) return;
+    if (!mounted || study == null) return;
     setState(_selected.clear);
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Références ajoutées à l’étude.')),

@@ -24,6 +24,7 @@ import 'package:echo_bible/features/bible/widgets/annotated_selectable_text.dart
 import 'package:echo_bible/features/bible/widgets/verse_selection_action_bar.dart';
 import 'package:echo_bible/features/study/widgets/verse_study_sheet.dart';
 import 'package:echo_bible/features/study/models/personal_study.dart';
+import 'package:echo_bible/features/study/screens/personal_study_editor_screen.dart';
 import 'package:echo_bible/features/study/widgets/study_destination_sheet.dart';
 import 'package:echo_bible/features/bible/widgets/verse_quick_actions_sheet.dart';
 import 'package:echo_bible/features/study/screens/cross_references_screen.dart';
@@ -950,34 +951,43 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     final reference = '${widget.book.name} $_currentChapter:$start'
         '${end == start ? '' : '-$end'}';
     final now = DateTime.now();
-    final added = await StudyDestinationSheet.show(
-      context,
-      StudyBlock(
-        id: '${now.microsecondsSinceEpoch}-reader',
-        type: start == end ? StudyBlockType.verse : StudyBlockType.verseRange,
-        position: 0,
-        payload: {
-          'translationId': _selectedVersionId,
-          'translationLabel': _selectedVersion.abbreviation,
-          'bookId': widget.book.id,
-          'bookName': widget.book.name,
-          'chaptersCount': widget.book.chaptersCount,
-          'chapter': _currentChapter,
-          'verseStart': start,
-          'verseEnd': end,
-          'reference': reference,
-          'text': verses
-              .map((item) => '${item['verse_number']} ${item['text']}')
-              .join('\n'),
-        },
-        createdAt: now,
-        updatedAt: now,
-      ),
+    final block = StudyBlock(
+      id: '${now.microsecondsSinceEpoch}-reader',
+      type: start == end ? StudyBlockType.verse : StudyBlockType.verseRange,
+      position: 0,
+      payload: {
+        'translationId': _selectedVersionId,
+        'translationLabel': _selectedVersion.abbreviation,
+        'bookId': widget.book.id,
+        'bookName': widget.book.name,
+        'chaptersCount': widget.book.chaptersCount,
+        'chapter': _currentChapter,
+        'verseStart': start,
+        'verseEnd': end,
+        'reference': reference,
+        'text': verses
+            .map((item) => '${item['verse_number']} ${item['text']}')
+            .join('\n'),
+      },
+      createdAt: now,
+      updatedAt: now,
     );
-    if (!mounted || !added) return;
+    final study = await StudyDestinationSheet.show(
+      context,
+      block,
+      reference: reference,
+    );
+    if (!mounted || study == null) return;
     _clearSelection();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Passage ajouté à l’étude.')),
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PersonalStudyEditorScreen(
+          study: study,
+          openingBlockId: block.id,
+          openingMessage: '$reference ajouté.',
+        ),
+      ),
     );
   }
 

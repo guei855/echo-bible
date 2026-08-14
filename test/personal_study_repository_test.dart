@@ -133,9 +133,14 @@ void main() {
           updatedAt: now,
         ),
     ];
-    final study = await repository.create(initialBlocks: blocks);
+    final study = await repository.create(
+      initialBlocks: blocks,
+      primaryReference: 'J\u00e9r\u00e9mie 26:4',
+    );
     final reopened = await repository.load(study.id);
-    expect(reopened!.blocks.map((block) => block.type), types);
+    expect(study.id, greaterThan(0));
+    expect(reopened!.primaryReference, 'J\u00e9r\u00e9mie 26:4');
+    expect(reopened.blocks.map((block) => block.type), types);
     expect(reopened.blocks.map((block) => block.position),
         List.generate(types.length, (index) => index));
     expect(reopened.blocks[5].payload['nested'], {'value': 5});
