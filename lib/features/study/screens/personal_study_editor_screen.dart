@@ -21,6 +21,10 @@ import 'package:echo_bible/features/study/widgets/study_rich_toolbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 
+@visibleForTesting
+double studyToolbarBottomInset(MediaQueryData mediaQuery) =>
+    mediaQuery.viewInsets.bottom;
+
 class PersonalStudyEditorScreen extends StatefulWidget {
   const PersonalStudyEditorScreen({
     super.key,
@@ -28,11 +32,13 @@ class PersonalStudyEditorScreen extends StatefulWidget {
     this.saveDocument,
     this.autosaveDelay = const Duration(milliseconds: 700),
     this.onActiveController,
+    this.onActiveFocusNode,
   });
   final PersonalStudy study;
   final Future<void> Function(PersonalStudy study)? saveDocument;
   final Duration autosaveDelay;
   final ValueChanged<QuillController>? onActiveController;
+  final ValueChanged<FocusNode>? onActiveFocusNode;
 
   @override
   State<PersonalStudyEditorScreen> createState() =>
@@ -49,10 +55,14 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   final List<List<StudyBlock>> _undo = [];
   final List<List<StudyBlock>> _redo = [];
   Timer? _saveTimer;
+  Timer? _snackBarTimer;
+  Future<void>? _saveInFlight;
   String? _activeBlockId;
   String? _selectedSpecialBlockId;
   bool _saving = false;
   bool _saved = true;
+  bool _finishing = false;
+  int _revision = 0;
 
   @override
   void initState() {
@@ -74,7 +84,7 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      _saveNow();
+      unawaited(_saveNow());
     }
   }
 
@@ -82,6 +92,7 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _saveTimer?.cancel();
+    _snackBarTimer?.cancel();
     _title.removeListener(_changed);
     _title.dispose();
     for (final subscription in _documentSubscriptions.values) {
@@ -103,9 +114,15 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
         .toSet();
     for (final id
         in _controllers.keys.where((id) => !ids.contains(id)).toList()) {
-      _documentSubscriptions.remove(id)?.cancel();
-      _controllers.remove(id)?.dispose();
-      _focusNodes.remove(id)?.dispose();
+      final subscription = _documentSubscriptions.remove(id);
+      final controller = _controllers.remove(id);
+      final focusNode = _focusNodes.remove(id);
+      // Let QuillEditor unmount before destroying objects it still depends on.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(subscription?.cancel());
+        controller?.dispose();
+        focusNode?.dispose();
+      });
     }
     for (final block in _study.blocks.where(StudyRichTextCodec.isRichText)) {
       _controllers.putIfAbsent(block.id, () {
@@ -117,20 +134,29 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
             .listen((_) => _onDocumentChanged(block.id));
         final focusNode = FocusNode(debugLabel: 'study-rich-${block.id}');
         focusNode.addListener(() {
-          if (!focusNode.hasFocus) return;
+          if (!focusNode.hasFocus ||
+              !mounted ||
+              _focusNodes[block.id] != focusNode) {
+            return;
+          }
           setState(() {
             _activeBlockId = block.id;
             _selectedSpecialBlockId = null;
           });
           widget.onActiveController?.call(controller);
+          widget.onActiveFocusNode?.call(focusNode);
         });
         _focusNodes[block.id] = focusNode;
         return controller;
       });
     }
-    _activeBlockId ??= ids.isEmpty ? null : ids.first;
+    if (!ids.contains(_activeBlockId)) {
+      _activeBlockId = ids.isEmpty ? null : ids.first;
+    }
     final active = _activeController;
     if (active != null) widget.onActiveController?.call(active);
+    final activeFocus = _activeFocusNode;
+    if (activeFocus != null) widget.onActiveFocusNode?.call(activeFocus);
   }
 
   void _onDocumentChanged(String id) {
@@ -148,6 +174,7 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
 
   void _changed({bool rebuild = true}) {
     _saveTimer?.cancel();
+    _revision++;
     if (mounted && _saved) {
       setState(() => _saved = false);
     } else if (mounted && rebuild) {
@@ -158,8 +185,26 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
 
   Future<void> _saveNow() async {
     _saveTimer?.cancel();
-    if (_saved || _saving) return;
-    if (mounted) setState(() => _saving = true);
+    while (!_saved) {
+      final running = _saveInFlight;
+      if (running != null) {
+        await running;
+        continue;
+      }
+      final revision = _revision;
+      final operation = _persist(revision);
+      _saveInFlight = operation;
+      try {
+        await operation;
+      } finally {
+        if (identical(_saveInFlight, operation)) _saveInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _persist(int revision) async {
+    _saving = true;
+    if (mounted) setState(() {});
     final title =
         _title.text.trim().isEmpty ? 'Document sans titre' : _title.text.trim();
     final blocks = [
@@ -180,16 +225,29 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     try {
       await (widget.saveDocument ??
           PersonalStudyService.saveDocument)(snapshot);
-      _study = snapshot;
-      if (mounted) setState(() => _saved = true);
+      final savedLatestRevision = revision == _revision;
+      if (savedLatestRevision) _study = snapshot;
+      _saved = savedLatestRevision;
+      if (mounted) setState(() {});
     } finally {
-      if (mounted) setState(() => _saving = false);
+      _saving = false;
+      if (mounted) setState(() {});
     }
   }
 
   Future<void> _finish() async {
-    await _saveNow();
-    if (mounted) Navigator.pop(context, true);
+    if (_finishing) return;
+    _finishing = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    _snackBarTimer?.cancel();
+    if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    try {
+      await _saveNow();
+      if (mounted) Navigator.pop(context, true);
+    } on Object {
+      _finishing = false;
+      if (mounted) _message('Impossible d\u2019enregistrer le document.');
+    }
   }
 
   @override
@@ -201,6 +259,7 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
         if (!didPop) _finish();
       },
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         backgroundColor: colors.surface,
         appBar: AppBar(
           leading: IconButton(
@@ -317,22 +376,32 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
             ),
           ],
         ),
-        bottomNavigationBar: SafeArea(
-          top: false,
-          child: _activeController == null
-              ? const SizedBox.shrink()
-              : StudyRichToolbar(
-                  controller: _activeController!,
-                  onInsert: _showInsertMenu,
-                  onDivider: () =>
-                      _insertBlock(StudyBlockType.divider, const {}),
-                  onHideKeyboard: () =>
-                      FocusManager.instance.primaryFocus?.unfocus(),
-                  onUndoBlocks: _undoBlocks,
-                  onRedoBlocks: _redoBlocks,
-                  canUndoBlocks: _undo.isNotEmpty,
-                  canRedoBlocks: _redo.isNotEmpty,
-                ),
+        bottomNavigationBar: AnimatedPadding(
+          key: const Key('study-toolbar-ime-padding'),
+          padding: EdgeInsets.only(
+            bottom: studyToolbarBottomInset(MediaQuery.of(context)),
+          ),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: SafeArea(
+            top: false,
+            child: _activeController == null
+                ? const SizedBox.shrink()
+                : StudyRichToolbar(
+                    key: const Key('study-rich-toolbar'),
+                    controller: _activeController!,
+                    focusNode: _activeFocusNode!,
+                    onInsert: _showInsertMenu,
+                    onDivider: () =>
+                        _insertBlock(StudyBlockType.divider, const {}),
+                    onHideKeyboard: () =>
+                        FocusManager.instance.primaryFocus?.unfocus(),
+                    onUndoBlocks: _undoBlocks,
+                    onRedoBlocks: _redoBlocks,
+                    canUndoBlocks: _undo.isNotEmpty,
+                    canRedoBlocks: _redo.isNotEmpty,
+                  ),
+          ),
         ),
       ),
     );
@@ -346,11 +415,9 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
 
   void _replaceBlocks(List<StudyBlock> blocks) {
     final normalized = StudyRichTextCodec.normalizeBlocks(blocks);
-    setState(() {
-      _study = _study.copyWith(blocks: normalized);
-      _syncControllers();
-    });
-    _changed();
+    setState(() => _study = _study.copyWith(blocks: normalized));
+    _syncControllers();
+    _changed(rebuild: false);
   }
 
   void _moveBlock(int index, int delta) {
@@ -370,22 +437,47 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
     _remember();
     final blocks = [..._study.blocks]..removeAt(index);
     _replaceBlocks(blocks);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    _snackBarTimer?.cancel();
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        MediaQuery.viewInsetsOf(context).bottom +
+            MediaQuery.paddingOf(context).bottom +
+            StudyRichToolbar.height +
+            8,
+      ),
       content: const Text('Bloc supprimé.'),
       action: SnackBarAction(
         label: 'Annuler',
         onPressed: () {
+          if (!mounted) return;
+          _snackBarTimer?.cancel();
           final restored = [..._study.blocks]..insert(index, removed);
           _replaceBlocks(restored);
+          messenger.hideCurrentSnackBar();
         },
       ),
     ));
+    _snackBarTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) messenger.hideCurrentSnackBar();
+    });
   }
 
   QuillController? get _activeController {
     final active = _controllers[_activeBlockId];
     if (active != null) return active;
     return _controllers.values.isEmpty ? null : _controllers.values.last;
+  }
+
+  FocusNode? get _activeFocusNode {
+    final active = _focusNodes[_activeBlockId];
+    if (active != null) return active;
+    return _focusNodes.values.isEmpty ? null : _focusNodes.values.last;
   }
 
   /* Legacy markup toolbar removed in V1.1.
@@ -1125,7 +1217,11 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
       );
       if (confirmed != true) return;
       await PersonalStudyService.delete(_study.id);
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) {
+        _snackBarTimer?.cancel();
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        Navigator.pop(context, true);
+      }
       return;
     }
     if (action == 'metadata') {

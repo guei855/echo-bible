@@ -18,6 +18,16 @@ void main() {
         home: home,
       );
 
+  test('inset toolbar nul clavier fermÃ© et dynamique clavier ouvert', () {
+    expect(studyToolbarBottomInset(const MediaQueryData()), 0);
+    expect(
+      studyToolbarBottomInset(
+        const MediaQueryData(viewInsets: EdgeInsets.only(bottom: 300)),
+      ),
+      300,
+    );
+  });
+
   testWidgets('autosave débouncé conserve titre et Delta riche',
       (tester) async {
     final now = DateTime.now();
@@ -158,5 +168,181 @@ void main() {
     await tester.longPress(find.text('Verset'));
     await tester.pump();
     expect(find.text('Ouvrir'), findsOneWidget);
+  });
+
+  testWidgets('formatage conserve focus et selection de Jesus-Christ',
+      (tester) async {
+    final now = DateTime.now();
+    QuillController? controller;
+    FocusNode? focusNode;
+    final study = PersonalStudy(
+      id: 5,
+      title: 'Focus',
+      blocks: [
+        StudyBlock(
+          id: 'rich-focus',
+          type: StudyBlockType.text,
+          position: 0,
+          payload: const {
+            'format': 'quill_delta_v1',
+            'delta': [
+              {'insert': 'J\u00e9sus-Christ nous sauve.\n'},
+            ],
+          },
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ],
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.pumpWidget(app(PersonalStudyEditorScreen(
+      study: study,
+      onActiveController: (value) => controller = value,
+      onActiveFocusNode: (value) => focusNode = value,
+      saveDocument: (_) async {},
+    )));
+
+    focusNode!.requestFocus();
+    controller!.updateSelection(
+      const TextSelection(baseOffset: 0, extentOffset: 12),
+      ChangeSource.local,
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('rich-bold')));
+    await tester.pump();
+
+    expect(focusNode!.hasFocus, isTrue);
+    expect(
+      controller!.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 12),
+    );
+    final delta = controller!.document.toDelta().toJson();
+    expect(delta.first['insert'], 'J\u00e9sus-Christ');
+    expect((delta.first['attributes'] as Map)['bold'], isTrue);
+
+    await tester.tap(find.byKey(const Key('rich-style')));
+    await tester.pumpAndSettle();
+    expect(focusNode!.hasFocus, isTrue);
+    await tester.tap(find.text('Parole forte'));
+    await tester.pumpAndSettle();
+    expect(focusNode!.hasFocus, isTrue);
+
+    await tester.tap(find.byKey(const Key('rich-more')));
+    await tester.pumpAndSettle();
+    expect(focusNode!.hasFocus, isTrue);
+    await tester.tap(find.text('Barr\u00e9'));
+    await tester.pumpAndSettle();
+    expect(focusNode!.hasFocus, isTrue);
+
+    await tester.tap(find.byKey(const Key('insert-study-block')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+    await tester.tapAt(const Offset(8, 100));
+    await tester.pumpAndSettle();
+    expect(focusNode!.hasFocus, isTrue);
+    expect(
+      controller!.selection,
+      const TextSelection(baseOffset: 0, extentOffset: 12),
+    );
+  });
+
+  testWidgets('snackbar temporaire et annulation de suppression',
+      (tester) async {
+    final now = DateTime.now();
+    final study = PersonalStudy(
+      id: 6,
+      title: 'Suppression',
+      blocks: [
+        StudyBlock(
+          id: 'verse-delete',
+          type: StudyBlockType.verse,
+          position: 0,
+          payload: const {'reference': 'Jean 3:16', 'text': 'Car Dieu...'},
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ],
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.pumpWidget(app(PersonalStudyEditorScreen(
+      study: study,
+      saveDocument: (_) async {},
+    )));
+
+    Future<void> deleteVerse() async {
+      await tester.longPress(find.text('Verset'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Actions du bloc'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Supprimer').last);
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+
+    await deleteVerse();
+    expect(find.text('Bloc supprim\u00e9.'), findsOneWidget);
+    tester.widget<SnackBarAction>(find.byType(SnackBarAction)).onPressed();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Verset'), findsOneWidget);
+    expect(find.text('Bloc supprim\u00e9.'), findsNothing);
+
+    await deleteVerse();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(find.text('Bloc supprim\u00e9.'), findsNothing);
+  });
+
+  testWidgets('suppression puis sortie repetee ne declenche pas de crash',
+      (tester) async {
+    final now = DateTime.now();
+    final study = PersonalStudy(
+      id: 7,
+      title: 'Navigation',
+      blocks: [
+        StudyBlock(
+          id: 'verse-navigation',
+          type: StudyBlockType.verse,
+          position: 0,
+          payload: const {'reference': 'Jean 3:16', 'text': 'Car Dieu...'},
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ],
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.pumpWidget(app(Builder(
+      builder: (context) => Scaffold(
+        body: FilledButton(
+          onPressed: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PersonalStudyEditorScreen(
+                study: study,
+                saveDocument: (_) async {},
+              ),
+            ),
+          ),
+          child: const Text('Ouvrir editeur'),
+        ),
+      ),
+    )));
+
+    for (var cycle = 0; cycle < 3; cycle++) {
+      await tester.tap(find.text('Ouvrir editeur'));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Verset'));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Actions du bloc'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Supprimer').last);
+      await tester.pump();
+      await tester.tap(find.byTooltip('Retour'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('Ouvrir editeur'), findsOneWidget);
+      expect(find.text('Bloc supprim\u00e9.'), findsNothing);
+    }
   });
 }
