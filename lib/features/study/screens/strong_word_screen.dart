@@ -10,12 +10,17 @@ import 'package:flutter/material.dart';
 class StrongWordScreen extends StatefulWidget {
   final VerseStrongWord word;
   final Future<List<StrongOccurrence>>? occurrences;
+  final Future<List<StrongOccurrence>> Function(int limit, int offset)?
+      occurrenceLoader;
+  final ValueChanged<StrongOccurrence>? onOpenOccurrence;
   final int? initialVersionId;
 
   const StrongWordScreen({
     super.key,
     required this.word,
     this.occurrences,
+    this.occurrenceLoader,
+    this.onOpenOccurrence,
     this.initialVersionId,
   });
 
@@ -33,23 +38,33 @@ class _StrongWordScreenState extends State<StrongWordScreen> {
   @override
   void initState() {
     super.initState();
-    _occurrences = widget.occurrences ??
-        VerseStudyService.loadOccurrences(word.code, limit: _pageSize);
-    if (widget.occurrences != null) _hasMore = false;
+    if (widget.occurrences != null) {
+      _occurrences = widget.occurrences!;
+      _hasMore = false;
+    } else {
+      _occurrences = _loadOccurrences(0).then((items) {
+        _hasMore = items.length == _pageSize;
+        return items;
+      });
+    }
   }
 
   void _loadMore(List<StrongOccurrence> current) {
     setState(() {
-      _occurrences = VerseStudyService.loadOccurrences(
-        word.code,
-        limit: _pageSize,
-        offset: current.length,
-      ).then((next) {
+      _occurrences = _loadOccurrences(current.length).then((next) {
         _hasMore = next.length == _pageSize;
         return [...current, ...next];
       });
     });
   }
+
+  Future<List<StrongOccurrence>> _loadOccurrences(int offset) =>
+      widget.occurrenceLoader?.call(_pageSize, offset) ??
+      VerseStudyService.loadOccurrences(
+        word.code,
+        limit: _pageSize,
+        offset: offset,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -231,12 +246,43 @@ class _StrongWordScreenState extends State<StrongWordScreen> {
                       ),
                       subtitle: Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          occurrence.verseText,
-                          style: TextStyle(
-                            color: colors.onSurfaceVariant,
-                            height: 1.4,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (occurrence.originalForm.isNotEmpty)
+                              Directionality(
+                                textDirection: word.inferredLanguage == 'Hébreu'
+                                    ? TextDirection.rtl
+                                    : TextDirection.ltr,
+                                child: Text(
+                                  occurrence.originalForm,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            if (occurrence.morphology?.isNotEmpty ?? false)
+                              Text(
+                                occurrence.morphologyDescription ??
+                                    VerseStrongWord(
+                                      id: 0,
+                                      order: 0,
+                                      word: occurrence.originalForm,
+                                      code: word.code,
+                                      morphology: occurrence.morphology,
+                                    ).morphologyInFrench ??
+                                    occurrence.morphology!,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            const SizedBox(height: 3),
+                            Text(
+                              occurrence.verseText,
+                              style: TextStyle(
+                                color: colors.onSurfaceVariant,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       trailing: const Icon(Icons.chevron_right_rounded),
@@ -321,6 +367,10 @@ class _StrongWordScreenState extends State<StrongWordScreen> {
       };
 
   void _openOccurrence(BuildContext context, StrongOccurrence occurrence) {
+    if (widget.onOpenOccurrence != null) {
+      widget.onOpenOccurrence!(occurrence);
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(

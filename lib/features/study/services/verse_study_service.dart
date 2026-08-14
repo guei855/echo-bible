@@ -138,6 +138,9 @@ class VerseStudyService {
             chapterNumber: row['chapter_number'] as int,
             verseNumber: row['verse_number'] as int,
             verseText: row['text'] as String,
+            originalForm: occurrence.originalToken,
+            morphology: occurrence.morphology,
+            morphologyDescription: occurrence.morphologyDescription,
           );
         })
         .whereType<StrongOccurrence>()

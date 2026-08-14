@@ -89,6 +89,7 @@ class StrongVerseToken {
   final String originalToken;
   final String? lemma;
   final String? morphology;
+  final String? morphologyDescription;
   final int position;
 
   const StrongVerseToken({
@@ -100,6 +101,7 @@ class StrongVerseToken {
     required this.originalToken,
     required this.lemma,
     required this.morphology,
+    this.morphologyDescription,
     required this.position,
   });
 
@@ -113,6 +115,7 @@ class StrongVerseToken {
         originalToken: map['token_original'] as String,
         lemma: map['lemma'] as String?,
         morphology: map['morphology'] as String?,
+        morphologyDescription: map['morphology_description'] as String?,
         position: map['token_position'] as int,
       );
 }

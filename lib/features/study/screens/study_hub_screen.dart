@@ -1,5 +1,9 @@
 import 'package:echo_bible/core/services/database_service.dart';
+import 'package:echo_bible/core/resources/resource_descriptor.dart';
+import 'package:echo_bible/core/resources/resource_manager.dart';
 import 'package:echo_bible/features/dictionary/screens/dictionary_screen.dart';
+import 'package:echo_bible/features/lexicon/screens/lexicon_screen.dart';
+import 'package:echo_bible/features/settings/screens/download_manager_screen.dart';
 import 'package:echo_bible/features/search/screens/concordance_screen.dart';
 import 'package:echo_bible/features/study/screens/study_resource_screen.dart';
 import 'package:echo_bible/features/study/screens/cross_references_screen.dart';
@@ -15,14 +19,34 @@ import 'package:flutter/material.dart';
 import 'package:sqflite/sqflite.dart';
 
 class StudyHubScreen extends StatefulWidget {
-  const StudyHubScreen({super.key});
+  const StudyHubScreen({super.key, this.loadStrongState});
+
+  final Future<OfflineResourceState> Function()? loadStrongState;
 
   @override
   State<StudyHubScreen> createState() => _StudyHubScreenState();
 }
 
 class _StudyHubScreenState extends State<StudyHubScreen> {
-  late Future<_StudyDataSummary> _summary = _loadSummary();
+  late Future<OfflineResourceState> _strongState;
+  late Future<_StudyDataSummary> _summary;
+
+  @override
+  void initState() {
+    super.initState();
+    _strongState = _loadStrongState();
+    _summary = _loadSummary();
+  }
+
+  Future<OfflineResourceState> _loadStrongState() async {
+    try {
+      return await (widget.loadStrongState?.call() ??
+              const ResourceManager().state(OfflineResourceId.strong))
+          .timeout(const Duration(seconds: 8));
+    } on Object {
+      return OfflineResourceState.notInstalled;
+    }
+  }
 
   Future<_StudyDataSummary> _loadSummary() async {
     final db = await DatabaseService.database;
@@ -33,11 +57,31 @@ class _StudyHubScreenState extends State<StudyHubScreen> {
           0;
     }
 
+    Future<int> safe(Future<int> Function() loader) async {
+      try {
+        return await loader();
+      } on Object {
+        return 0;
+      }
+    }
+
+    final strongState = await _strongState;
+    final strongInstalled = strongState == OfflineResourceState.installed ||
+        strongState == OfflineResourceState.updateAvailable;
+    final counts = await Future.wait<int>([
+      strongInstalled
+          ? safe(() => const StrongRepository().count())
+          : Future.value(0),
+      safe(() => const NaveRepository().count()),
+      safe(() => const CrossReferenceRepository().count()),
+      safe(() => count('personal_studies')),
+    ]);
     return _StudyDataSummary(
-      strongCount: await const StrongRepository().count(),
-      lexiconCount: await const NaveRepository().count(),
-      crossReferenceCount: await const CrossReferenceRepository().count(),
-      personalStudyCount: await count('personal_studies'),
+      strongState: strongState,
+      strongCount: counts[0],
+      topicsCount: counts[1],
+      crossReferenceCount: counts[2],
+      personalStudyCount: counts[3],
     );
   }
 
@@ -88,18 +132,32 @@ class _StudyHubScreenState extends State<StudyHubScreen> {
                     color: const Color(0xFF7C3AED),
                     badge: summary == null
                         ? 'Vérification…'
-                        : '${summary.strongCount} entrées',
+                        : summary.strongAvailable
+                            ? '${summary.strongCount} entrées'
+                            : 'Télécharger',
                     onTap: () => _open(const ConcordanceScreen(initialTab: 1)),
                   ),
-                  _StudyCard(
-                    title: 'Lexique',
-                    description: 'Hébreu, grec, translittération et grammaire.',
-                    icon: Icons.abc_rounded,
-                    color: const Color(0xFF0891B2),
-                    badge: summary == null
-                        ? 'Vérification…'
-                        : '${summary.lexiconCount} entrées',
-                    onTap: () => _open(const ConcordanceScreen(initialTab: 1)),
+                  FutureBuilder<OfflineResourceState>(
+                    future: _strongState,
+                    builder: (context, resourceSnapshot) {
+                      final state = resourceSnapshot.data;
+                      final available =
+                          state == OfflineResourceState.installed ||
+                              state == OfflineResourceState.updateAvailable;
+                      return _StudyCard(
+                        title: 'Lexique',
+                        description:
+                            'Hébreu, grec, translittération et grammaire.',
+                        icon: Icons.abc_rounded,
+                        color: const Color(0xFF0891B2),
+                        badge: state == null
+                            ? 'Vérification…'
+                            : available
+                                ? 'Disponible'
+                                : 'Télécharger',
+                        onTap: _openLexicon,
+                      );
+                    },
                   ),
                   _StudyCard(
                     title: 'Références',
@@ -125,7 +183,7 @@ class _StudyHubScreenState extends State<StudyHubScreen> {
                     color: const Color(0xFFDB2777),
                     badge: summary == null
                         ? 'Vérification…'
-                        : '${summary.lexiconCount} thèmes',
+                        : '${summary.topicsCount} thèmes',
                     onTap: () => _open(const NaveTopicsScreen()),
                   ),
                   _StudyCard(
@@ -216,6 +274,35 @@ class _StudyHubScreenState extends State<StudyHubScreen> {
 
   void _open(Widget screen) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  }
+
+  Future<void> _openLexicon() async {
+    const manager = ResourceManager();
+    OfflineResourceState state;
+    try {
+      state = await manager.state(OfflineResourceId.strong);
+    } on Object {
+      state = OfflineResourceState.notInstalled;
+    }
+    if (!mounted) return;
+    final installed = state == OfflineResourceState.installed ||
+        state == OfflineResourceState.updateAvailable;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => installed
+            ? const LexiconScreen()
+            : const DownloadManagerScreen(
+                initialCategory: ResourceCategory.strong,
+              ),
+      ),
+    );
+    if (mounted) {
+      setState(() {
+        _strongState = _loadStrongState();
+        _summary = _loadSummary();
+      });
+    }
   }
 
   void _unavailable(String title, String description, IconData icon) {
@@ -320,6 +407,7 @@ class _StudyCard extends StatelessWidget {
                     Flexible(
                       child: Text(
                         badge!,
+                        key: Key('study-$title-badge'),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style:
@@ -393,15 +481,21 @@ class _WorkspaceTile extends StatelessWidget {
 }
 
 class _StudyDataSummary {
+  final OfflineResourceState strongState;
   final int strongCount;
-  final int lexiconCount;
+  final int topicsCount;
   final int crossReferenceCount;
   final int personalStudyCount;
 
   const _StudyDataSummary({
+    required this.strongState,
     required this.strongCount,
-    required this.lexiconCount,
+    required this.topicsCount,
     required this.crossReferenceCount,
     required this.personalStudyCount,
   });
+
+  bool get strongAvailable =>
+      strongState == OfflineResourceState.installed ||
+      strongState == OfflineResourceState.updateAvailable;
 }

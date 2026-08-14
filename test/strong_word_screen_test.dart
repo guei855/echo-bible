@@ -57,4 +57,58 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('pagine 30 occurrences et ouvre le lecteur au bon verset',
+      (tester) async {
+    final offsets = <int>[];
+    StrongOccurrence? opened;
+    List<StrongOccurrence> page(int start, int count) => [
+          for (var index = start; index < start + count; index++)
+            StrongOccurrence(
+              bookId: 43,
+              bookName: 'Jean',
+              chaptersCount: 21,
+              chapterNumber: 1,
+              verseNumber: index + 1,
+              verseText: 'Texte ${index + 1}',
+              originalForm: 'λόγος',
+              morphology: 'N-NSM',
+              morphologyDescription: 'Nom · Nominatif · Singulier · Masculin',
+            ),
+        ];
+    await tester.pumpWidget(MaterialApp(
+      home: StrongWordScreen(
+        word: const VerseStrongWord(
+          id: 1,
+          order: 1,
+          word: 'λόγος',
+          code: 'G3056',
+          language: 'Grec',
+        ),
+        occurrenceLoader: (limit, offset) async {
+          offsets.add(offset);
+          return offset == 0 ? page(0, limit) : page(offset, 1);
+        },
+        onOpenOccurrence: (occurrence) => opened = occurrence,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Jean 1:1'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Afficher plus'),
+      500,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(find.text('Afficher plus'));
+    await tester.pumpAndSettle();
+    expect(offsets, [0, 30]);
+
+    await tester.ensureVisible(find.text('Jean 1:1'));
+    await tester.tap(find.text('Jean 1:1'));
+    await tester.pump();
+    expect(opened?.bookName, 'Jean');
+    expect(opened?.chapterNumber, 1);
+    expect(opened?.verseNumber, 1);
+  });
 }

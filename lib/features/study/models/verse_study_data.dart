@@ -110,6 +110,9 @@ class StrongOccurrence {
   final int chapterNumber;
   final int verseNumber;
   final String verseText;
+  final String originalForm;
+  final String? morphology;
+  final String? morphologyDescription;
 
   const StrongOccurrence({
     required this.bookId,
@@ -118,5 +121,8 @@ class StrongOccurrence {
     required this.chapterNumber,
     required this.verseNumber,
     required this.verseText,
+    this.originalForm = '',
+    this.morphology,
+    this.morphologyDescription,
   });
 }

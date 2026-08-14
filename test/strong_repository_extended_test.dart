@@ -47,6 +47,8 @@ void main() {
         containsAll(['H26', 'G26']));
 
     for (final query in [
+      'logos',
+      'agape',
       'Dieu',
       'commencement',
       'amour',
@@ -67,6 +69,46 @@ void main() {
       (await repository.search('Parole')).map((entry) => entry.strongNumber),
       contains('G3056'),
     );
+    expect(
+      (await repository.search('logos')).map((entry) => entry.strongNumber),
+      contains('G3056'),
+    );
+    expect(
+      (await repository.search('agape')).map((entry) => entry.strongNumber),
+      contains('G26'),
+    );
+    expect(
+      (await repository.search('λόγος')).map((entry) => entry.strongNumber),
+      contains('G3056'),
+    );
+  });
+
+  test('recherche la forme hébraïque avec ou sans signes massorétiques',
+      () async {
+    const repository = StrongRepository();
+    final pointed = await repository.search('אֱלֹהִים');
+    final unpointed = await repository.search('אלהים');
+
+    expect(pointed.map((entry) => entry.strongNumber), contains('H430'));
+    expect(unpointed.map((entry) => entry.strongNumber), contains('H430'));
+  });
+
+  test('lit la morphologie et pagine les occurrences depuis strong.db',
+      () async {
+    const repository = StrongRepository();
+    final description = await repository.morphologyDescription('N-NSM');
+    final first = await repository.occurrences('G3056', limit: 30);
+    final second = await repository.occurrences(
+      'G3056',
+      limit: 30,
+      offset: 30,
+    );
+
+    expect(description, isNotEmpty);
+    expect(first.length, 30);
+    expect(second, isNotEmpty);
+    expect(first.first.originalToken, isNotEmpty);
+    expect(first.first.morphologyDescription, isNotEmpty);
   });
 
   test('conserve les associations multiples et les termes non traduits',
