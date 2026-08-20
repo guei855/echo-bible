@@ -1,9 +1,50 @@
+import 'package:echo_bible/core/resources/resource_descriptor.dart';
 import 'package:echo_bible/features/study/models/personal_study.dart';
+import 'package:echo_bible/features/study/models/nave_topic.dart';
+import 'package:echo_bible/features/study/repositories/nave_repository.dart';
 import 'package:echo_bible/features/study/screens/personal_study_editor_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _FakeNaveRepository extends NaveRepository {
+  const _FakeNaveRepository();
+
+  @override
+  Future<List<NaveTopic>> search(
+    String value, {
+    int limit = 100,
+    AppLanguage? language,
+  }) async =>
+      const [
+        NaveTopic(
+          id: 7,
+          title: 'Amour',
+          titleEnglish: 'LOVE',
+          translationStatus: 'manual',
+        ),
+      ];
+
+  @override
+  Future<List<NaveReference>> references(
+    int topicId, {
+    AppLanguage? language,
+  }) async =>
+      const [
+        NaveReference(
+          subtopicId: 1,
+          subtopic: 'Amour de Dieu',
+          subtopicEnglish: 'LOVE OF GOD',
+          translationStatus: 'manual',
+          bookId: 43,
+          bookName: 'Jean',
+          chaptersCount: 21,
+          chapter: 3,
+          verseStart: 16,
+        ),
+      ];
+}
 
 void main() {
   Widget app(Widget home) => MaterialApp(
@@ -77,6 +118,72 @@ void main() {
     expect(saved!.blocks.single.payload['format'], 'quill_delta_v1');
     expect(saved!.blocks.single.plainText, 'Une introduction préservée.');
     expect(find.text('Sauvegardé'), findsOneWidget);
+  });
+
+  testWidgets('insère un bloc Nave résumé choisi et persistant',
+      (tester) async {
+    final now = DateTime.now();
+    PersonalStudy? saved;
+    final study = PersonalStudy(
+      id: 77,
+      title: 'Étude sur l’amour',
+      blocks: [
+        StudyBlock(
+          id: 'nave-anchor',
+          type: StudyBlockType.text,
+          position: 0,
+          payload: const {'text': ''},
+          createdAt: now,
+          updatedAt: now,
+        ),
+      ],
+      createdAt: now,
+      updatedAt: now,
+    );
+    await tester.pumpWidget(app(PersonalStudyEditorScreen(
+      study: study,
+      naveRepository: const _FakeNaveRepository(),
+      autosaveDelay: const Duration(milliseconds: 20),
+      saveDocument: (value) async => saved = value,
+    )));
+    final toolbar = tester.widget<SingleChildScrollView>(
+      find.byKey(const Key('study-toolbar-horizontal-scroll')),
+    );
+    toolbar.controller!.jumpTo(toolbar.controller!.position.maxScrollExtent);
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('insert-study-block')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Thème Nave'),
+      160,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('study-insert-menu-scrollable')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(find.text('Thème Nave'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'amour');
+    await tester.tap(find.text('Continuer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Amour').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Insérer un résumé avec références'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CheckboxListTile).first);
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Insérer'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 30));
+
+    final nave = saved!.blocks.singleWhere(
+      (block) => block.type == StudyBlockType.nave,
+    );
+    expect(nave.payload['topicId'], 7);
+    expect(nave.payload['titleEnglish'], 'LOVE');
+    expect(nave.payload['references'], ['Jean 3:16']);
+    expect(find.text('Bible thématique Nave'), findsOneWidget);
+    expect(find.text('Ouvrir le thème →'), findsOneWidget);
   });
 
   testWidgets('le gras est WYSIWYG et aucun marqueur ne devient visible',

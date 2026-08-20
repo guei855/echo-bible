@@ -33,6 +33,11 @@ void main() {
       'repentance': 'Repentance',
       'justification': 'Justification',
       'sanctification': 'Sanctification',
+      'Abraham': 'Abraham',
+      'Moïse': 'Moïse',
+      'David': 'David',
+      'Paul': 'Paul',
+      'Pierre': 'Pierre',
     };
 
     for (final entry in expected.entries) {
@@ -117,6 +122,43 @@ void main() {
     expect(references.every((reference) => reference.bookId > 0), isTrue);
     expect(references.every((reference) => reference.chapter > 0), isTrue);
     expect(references.every((reference) => reference.verseStart > 0), isTrue);
+  });
+
+  test('les dix thèmes doctrinaux majeurs gardent français, anglais et liens',
+      () async {
+    const repository = NaveRepository();
+    const expected = {
+      'Amour': 'LOVE',
+      'Foi': 'FAITH',
+      'Grâce': 'GRACE OF GOD',
+      'Dieu': 'GOD',
+      'Jésus': 'JESUS, THE CHRIST',
+      'Saint-Esprit': 'HOLY SPIRIT',
+      'Prière': 'PRAYER',
+      'Salut': 'SALVATION',
+      'Alliance': 'COVENANT',
+      'Église': 'CHURCH',
+    };
+    for (final entry in expected.entries) {
+      final topic = (await repository.search(entry.key)).first;
+      expect(topic.titleEnglish, entry.value, reason: entry.key);
+      expect(topic.isTranslated, isTrue, reason: entry.key);
+      expect(topic.translationStatus, 'manual', reason: entry.key);
+      final references = await repository.references(topic.id);
+      expect(references, isNotEmpty, reason: entry.key);
+      expect(
+        references.every((reference) => reference.subtopicEnglish.isNotEmpty),
+        isTrue,
+        reason: entry.key,
+      );
+    }
+  });
+
+  test('le catalogue français est trié sur le libellé affiché', () async {
+    const repository = NaveRepository();
+    final topics = await repository.browse(limit: 6000);
+    final normalized = topics.map((topic) => repository.normalize(topic.title));
+    expect(normalized, orderedEquals([...normalized]..sort()));
   });
 
   test('les thèmes liés à un verset utilisent aussi la couche localisée',

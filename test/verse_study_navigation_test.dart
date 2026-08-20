@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:echo_bible/core/resources/resource_descriptor.dart';
 import 'package:echo_bible/features/bible/models/bible_book.dart';
 import 'package:echo_bible/features/bible/models/bible_version.dart';
 import 'package:echo_bible/features/study/models/cross_reference.dart';
+import 'package:echo_bible/features/study/models/nave_topic.dart';
 import 'package:echo_bible/features/study/models/verse_study_data.dart';
+import 'package:echo_bible/features/study/repositories/nave_repository.dart';
 import 'package:echo_bible/features/study/widgets/verse_study_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -77,12 +80,28 @@ CrossReference _reference(int sourceVerse) => CrossReference(
       requestedVersionId: 1,
     );
 
+class _EmptyNaveRepository extends NaveRepository {
+  const _EmptyNaveRepository();
+
+  @override
+  Future<List<NaveTopic>> forVerse(
+    int bookId,
+    int chapter,
+    int verse, {
+    int limit = 100,
+    AppLanguage? language,
+  }) async =>
+      const [];
+}
+
 Widget _sheet({
   int chapter = 8,
   int initialVerse = 1,
   List<VerseStudyTarget>? verses,
   StudyCrossReferenceLoader? references,
   StudyChapterLoader? chapters,
+  String? selectedText,
+  NaveRepository naveRepository = const NaveRepository(),
 }) =>
     MaterialApp(
       home: Scaffold(
@@ -92,6 +111,7 @@ Widget _sheet({
           versionId: 1,
           verses: verses ?? _targets(chapter, 1, 4),
           initialVerseNumber: initialVerse,
+          selectedText: selectedText,
           loadStudy: (_) async => const VerseStudyData(
             strongWords: [],
             crossReferences: [],
@@ -108,6 +128,7 @@ Widget _sheet({
                 'uses_default_text': 0,
               },
           ],
+          naveRepository: naveRepository,
         ),
       ),
     );
@@ -276,5 +297,25 @@ void main() {
       find.widgetWithText(TextButton, 'Verset suivant'),
     );
     expect(next.onPressed, isNull);
+  });
+
+  testWidgets('une sélection de mot lance une recherche Nave préremplie',
+      (tester) async {
+    await tester.pumpWidget(
+      _sheet(
+        selectedText: 'grâce',
+        naveRepository: const _EmptyNaveRepository(),
+      ),
+    );
+    await tester.pump();
+    await _chooseTool(tester, 'topics');
+    final action = find.text('Rechercher « grâce » dans Nave');
+    expect(action, findsOneWidget);
+    await tester.tap(action);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller?.text, 'grâce');
   });
 }

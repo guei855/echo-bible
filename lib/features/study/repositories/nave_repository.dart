@@ -57,7 +57,7 @@ class NaveRepository {
   }
 
   Future<List<NaveTopic>> browse({
-    int limit = 200,
+    int limit = 6000,
     AppLanguage? language,
   }) async {
     final selectedLanguage = language ?? await LanguageSettingsService.load();
@@ -93,7 +93,11 @@ class NaveRepository {
         topics.add(NaveTopic(id: id, title: title, titleEnglish: title));
         if (topics.length == limit) break;
       }
-      return topics;
+      topics.sort(
+        (left, right) =>
+            normalize(left.title).compareTo(normalize(right.title)),
+      );
+      return topics.take(limit).toList(growable: false);
     });
   }
 

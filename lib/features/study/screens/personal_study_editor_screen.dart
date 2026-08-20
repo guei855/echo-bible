@@ -10,9 +10,12 @@ import 'package:echo_bible/features/dictionary/models/dictionary_entry.dart';
 import 'package:echo_bible/features/dictionary/screens/dictionary_detail_screen.dart';
 import 'package:echo_bible/features/study/models/personal_study.dart';
 import 'package:echo_bible/features/study/models/cross_reference.dart';
+import 'package:echo_bible/features/study/models/nave_topic.dart';
 import 'package:echo_bible/features/study/models/verse_study_data.dart';
 import 'package:echo_bible/features/study/repositories/cross_reference_repository.dart';
+import 'package:echo_bible/features/study/repositories/nave_repository.dart';
 import 'package:echo_bible/features/study/repositories/strong_repository.dart';
+import 'package:echo_bible/features/study/screens/nave_topics_screen.dart';
 import 'package:echo_bible/features/study/screens/strong_word_screen.dart';
 import 'package:echo_bible/features/study/services/personal_study_service.dart';
 import 'package:echo_bible/features/study/services/study_export_service.dart';
@@ -32,6 +35,49 @@ class _StudyInsertionAnchor {
   final TextSelection selection;
 }
 
+class _StudyTextPromptDialog extends StatefulWidget {
+  const _StudyTextPromptDialog({required this.title, required this.hint});
+
+  final String title;
+  final String hint;
+
+  @override
+  State<_StudyTextPromptDialog> createState() => _StudyTextPromptDialogState();
+}
+
+class _StudyTextPromptDialogState extends State<_StudyTextPromptDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: Text(widget.title),
+        content: TextField(
+          controller: _controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: widget.hint,
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, _controller.text.trim()),
+            child: const Text('Continuer'),
+          ),
+        ],
+      );
+}
+
 class PersonalStudyEditorScreen extends StatefulWidget {
   const PersonalStudyEditorScreen({
     super.key,
@@ -43,6 +89,7 @@ class PersonalStudyEditorScreen extends StatefulWidget {
     this.focusOnOpen = false,
     this.openingBlockId,
     this.openingMessage,
+    this.naveRepository = const NaveRepository(),
   });
   final PersonalStudy study;
   final Future<void> Function(PersonalStudy study)? saveDocument;
@@ -52,6 +99,7 @@ class PersonalStudyEditorScreen extends StatefulWidget {
   final bool focusOnOpen;
   final String? openingBlockId;
   final String? openingMessage;
+  final NaveRepository naveRepository;
 
   @override
   State<PersonalStudyEditorScreen> createState() =>
@@ -791,6 +839,8 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
                     Icons.account_tree, 'Références croisées'),
                 _insertTile(context, StudyBlockType.comparison,
                     Icons.compare_arrows, 'Comparaison'),
+                _insertTile(context, StudyBlockType.nave, Icons.hub_outlined,
+                    'Thème Nave'),
                 _insertTile(context, StudyBlockType.divider,
                     Icons.horizontal_rule, 'Séparateur'),
                 _insertTile(context, StudyBlockType.image, Icons.image_outlined,
@@ -812,6 +862,8 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
       await _insertStrong(anchor);
     } else if (type == StudyBlockType.dictionary) {
       await _insertDictionary(anchor);
+    } else if (type == StudyBlockType.nave) {
+      await _insertNave(anchor);
     } else if (type == StudyBlockType.image) {
       await _insertImagePlaceholder(anchor);
     } else {
@@ -1222,6 +1274,142 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
         anchor: anchor);
   }
 
+  Future<void> _insertNave(_StudyInsertionAnchor anchor) async {
+    final query = await _ask('Insérer un thème Nave', 'Ex. Amour ou Foi');
+    if (query == null) return;
+    try {
+      final topics = await widget.naveRepository.search(query, limit: 20);
+      if (!mounted) return;
+      if (topics.isEmpty) return _message('Aucun thème Nave trouvé.');
+      final topic = await showDialog<NaveTopic>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Choisir un thème Nave'),
+          children: [
+            for (final item in topics)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, item),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(item.title),
+                  subtitle: item.isTranslated ? Text(item.titleEnglish) : null,
+                ),
+              ),
+          ],
+        ),
+      );
+      if (!mounted || topic == null) return;
+      final displayMode = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.link),
+                title: const Text('Insérer un lien vers le thème'),
+                onTap: () => Navigator.pop(context, 'link'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.view_agenda_outlined),
+                title: const Text('Insérer un résumé avec références'),
+                onTap: () => Navigator.pop(context, 'summary'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (!mounted || displayMode == null) return;
+      var selectedReferences = const <NaveReference>[];
+      if (displayMode == 'summary') {
+        final references = await widget.naveRepository.references(topic.id);
+        if (!mounted) return;
+        selectedReferences =
+            await _pickNaveReferences(references.take(60).toList()) ?? const [];
+        if (selectedReferences.isEmpty) return;
+      }
+      _insertBlock(
+        StudyBlockType.nave,
+        {
+          'topicId': topic.id,
+          'title': topic.title,
+          'titleEnglish': topic.titleEnglish,
+          'translationStatus': topic.translationStatus,
+          'displayMode': displayMode,
+          'references': [
+            for (final reference in selectedReferences)
+              '${reference.bookName} ${reference.chapter}:'
+                  '${reference.verseStart}'
+                  '${reference.verseEnd == null ? '' : '-${reference.verseEnd}'}',
+          ],
+        },
+        anchor: anchor,
+      );
+    } on Object {
+      _message(
+        'Bible thématique Nave non installée ou temporairement indisponible.',
+      );
+    }
+  }
+
+  Future<List<NaveReference>?> _pickNaveReferences(
+    List<NaveReference> references,
+  ) {
+    final selected = <int>{};
+    return showDialog<List<NaveReference>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Choisir jusqu’à 5 références'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: references.length,
+              itemBuilder: (context, index) {
+                final reference = references[index];
+                return CheckboxListTile(
+                  value: selected.contains(index),
+                  title: Text(
+                    '${reference.bookName} ${reference.chapter}:'
+                    '${reference.verseStart}'
+                    '${reference.verseEnd == null ? '' : '-${reference.verseEnd}'}',
+                  ),
+                  subtitle: Text(
+                    reference.subtopic,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onChanged: (_) => setDialogState(() {
+                    if (!selected.remove(index) && selected.length < 5) {
+                      selected.add(index);
+                    }
+                  }),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: selected.isEmpty
+                  ? null
+                  : () => Navigator.pop(
+                        context,
+                        selected.map((index) => references[index]).toList(),
+                      ),
+              child: const Text('Insérer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _insertImagePlaceholder(_StudyInsertionAnchor anchor) async {
     final caption = await _ask('Insérer une image', 'Légende ou chemin local');
     if (caption != null) {
@@ -1234,27 +1422,10 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
   }
 
   Future<String?> _ask(String title, String hint) async {
-    final controller = TextEditingController();
     final value = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(
-                hintText: hint, border: const OutlineInputBorder())),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Annuler')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Continuer')),
-        ],
-      ),
+      builder: (context) => _StudyTextPromptDialog(title: title, hint: hint),
     );
-    controller.dispose();
     return value?.isEmpty == true ? null : value;
   }
 
@@ -1284,6 +1455,22 @@ class _PersonalStudyEditorScreenState extends State<PersonalStudyEditorScreen>
                     initialVerse: payload['verseStart'] as int?,
                     initialVersionId: payload['translationId'] as int?,
                   )));
+    } else if (block.type == StudyBlockType.nave) {
+      final topicId = payload['topicId'] as int?;
+      if (!mounted || topicId == null) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => NaveTopicDetailScreen(
+            topic: NaveTopic(
+              id: topicId,
+              title: payload['title'] as String? ?? '',
+              titleEnglish: payload['titleEnglish'] as String? ?? '',
+              translationStatus: payload['translationStatus'] as String?,
+            ),
+          ),
+        ),
+      );
     } else if (block.type == StudyBlockType.strong) {
       final code = payload['code'] as String? ?? '';
       final entry = await const StrongRepository().findByNumber(code);
@@ -1535,6 +1722,16 @@ class _SpecialStudyBlock extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
+                if (block.type == StudyBlockType.nave) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Ouvrir le thème →',
+                    style: TextStyle(
+                      color: colors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
                 if (selected) ...[
                   const SizedBox(height: 8),
                   _actions(context),
@@ -1590,6 +1787,7 @@ class _SpecialStudyBlock extends StatelessWidget {
           colors.tertiaryContainer.withValues(alpha: .38),
         StudyBlockType.dictionary =>
           colors.secondaryContainer.withValues(alpha: .38),
+        StudyBlockType.nave => colors.primaryContainer.withValues(alpha: .28),
         _ => colors.surfaceContainerLow,
       };
 
@@ -1601,6 +1799,7 @@ class _SpecialStudyBlock extends StatelessWidget {
         StudyBlockType.dictionary => 'Dictionnaire Vigouroux',
         StudyBlockType.crossReferences => 'Références croisées',
         StudyBlockType.comparison => 'Comparaison de versions',
+        StudyBlockType.nave => 'Bible thématique Nave',
         StudyBlockType.image => 'Image',
         _ => 'Ressource',
       };
@@ -1612,6 +1811,7 @@ class _SpecialStudyBlock extends StatelessWidget {
         StudyBlockType.dictionary => Icons.menu_book_outlined,
         StudyBlockType.crossReferences => Icons.account_tree,
         StudyBlockType.comparison => Icons.compare_arrows,
+        StudyBlockType.nave => Icons.hub_outlined,
         StudyBlockType.image => Icons.image_outlined,
         _ => Icons.widgets_outlined,
       };
@@ -1690,6 +1890,11 @@ class _BlockEditor extends StatelessWidget {
                 const Text('Ouvrir dans la Bible →',
                     style: TextStyle(
                         color: AppColors.primary, fontWeight: FontWeight.bold))
+              ] else if (block.type == StudyBlockType.nave) ...[
+                const SizedBox(height: 8),
+                const Text('Ouvrir le thème →',
+                    style: TextStyle(
+                        color: AppColors.primary, fontWeight: FontWeight.bold))
               ],
             ]),
           ),
@@ -1729,6 +1934,7 @@ class _BlockEditor extends StatelessWidget {
         StudyBlockType.dictionary => 'Dictionnaire Vigouroux',
         StudyBlockType.crossReferences => 'Références croisées',
         StudyBlockType.comparison => 'Comparaison',
+        StudyBlockType.nave => 'Bible thématique Nave',
         StudyBlockType.image => 'Image',
         _ => type.name,
       };
@@ -1737,6 +1943,7 @@ class _BlockEditor extends StatelessWidget {
         StudyBlockType.dictionary => Icons.menu_book_outlined,
         StudyBlockType.crossReferences => Icons.account_tree,
         StudyBlockType.comparison => Icons.compare_arrows,
+        StudyBlockType.nave => Icons.hub_outlined,
         StudyBlockType.image => Icons.image_outlined,
         _ => Icons.menu_book,
       };

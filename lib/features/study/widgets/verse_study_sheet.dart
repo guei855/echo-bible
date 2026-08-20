@@ -88,6 +88,7 @@ class VerseStudySheet extends StatefulWidget {
   final StudyCrossReferenceLoader? loadReferences;
   final VersionLoader? comparisonVersionLoader;
   final ChapterLoader? comparisonChapterLoader;
+  final NaveRepository naveRepository;
 
   const VerseStudySheet({
     super.key,
@@ -107,6 +108,7 @@ class VerseStudySheet extends StatefulWidget {
     this.loadReferences,
     this.comparisonVersionLoader,
     this.comparisonChapterLoader,
+    this.naveRepository = const NaveRepository(),
   });
 
   static Future<void> show(
@@ -429,6 +431,8 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
             bookId: _book.id,
             chapter: _chapter,
             verse: _verse.verseNumber,
+            searchQuery: _isInitialReference ? widget.selectedText : null,
+            repository: widget.naveRepository,
           ),
         VerseStudyTool.references => _ReferencesPanel(
             book: _book,
@@ -636,16 +640,29 @@ class _TopicsPanel extends StatelessWidget {
   final int bookId;
   final int chapter;
   final int verse;
+  final String? searchQuery;
+  final NaveRepository repository;
 
   const _TopicsPanel({
     required this.bookId,
     required this.chapter,
     required this.verse,
+    this.searchQuery,
+    required this.repository,
   });
+
+  void _openSearch(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NaveTopicsScreen(initialQuery: searchQuery),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<List<NaveTopic>>(
-        future: const NaveRepository().forVerse(bookId, chapter, verse),
+        future: repository.forVerse(bookId, chapter, verse),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
@@ -677,28 +694,49 @@ class _TopicsPanel extends StatelessWidget {
             return EmptyResourceState(
               icon: Icons.hub_outlined,
               message: 'Aucun thème Nave n’est directement relié à ce verset.',
-              actionLabel: 'Rechercher un thème',
-              onAction: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const NaveTopicsScreen()),
-              ),
+              actionLabel: searchQuery?.trim().isNotEmpty == true
+                  ? 'Rechercher « ${searchQuery!.trim()} » dans Nave'
+                  : 'Rechercher dans Nave',
+              onAction: () => _openSearch(context),
             );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: topics.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) => ListTile(
-              leading: const Icon(Icons.hub_outlined),
-              title: Text(topics[index].title),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => NaveTopicDetailScreen(topic: topics[index]),
+          return Column(
+            children: [
+              if (searchQuery?.trim().isNotEmpty == true)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      key: const Key('search-selected-text-in-nave'),
+                      onPressed: () => _openSearch(context),
+                      icon: const Icon(Icons.search),
+                      label: Text(
+                        'Rechercher « ${searchQuery!.trim()} » dans Nave',
+                      ),
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: topics.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) => ListTile(
+                    leading: const Icon(Icons.hub_outlined),
+                    title: Text(topics[index].title),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            NaveTopicDetailScreen(topic: topics[index]),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           );
         },
       );

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "languageCode": "fr",
   "source": "ECHO BIBLE — révision éditoriale française",
-  "status": "editorial",
+  "status": "manual",
   "notes": "Couche progressive indépendante. Le texte anglais de Nave et ses références ne sont jamais modifiés.",
   "topics": [
     {"titleEn": "ABRAHAM", "text": "Abraham"},

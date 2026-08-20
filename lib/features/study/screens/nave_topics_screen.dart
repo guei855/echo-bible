@@ -10,7 +10,12 @@ import 'package:flutter/material.dart';
 
 class NaveTopicsScreen extends StatefulWidget {
   final String? initialQuery;
-  const NaveTopicsScreen({super.key, this.initialQuery});
+  final NaveRepository repository;
+  const NaveTopicsScreen({
+    super.key,
+    this.initialQuery,
+    this.repository = const NaveRepository(),
+  });
 
   @override
   State<NaveTopicsScreen> createState() => _NaveTopicsScreenState();
@@ -18,7 +23,6 @@ class NaveTopicsScreen extends StatefulWidget {
 
 class _NaveTopicsScreenState extends State<NaveTopicsScreen> {
   final _controller = TextEditingController();
-  final _repository = const NaveRepository();
   late Future<List<NaveTopic>> _results;
 
   @override
@@ -27,8 +31,8 @@ class _NaveTopicsScreenState extends State<NaveTopicsScreen> {
     final initialQuery = widget.initialQuery?.trim() ?? '';
     _controller.text = initialQuery;
     _results = initialQuery.isEmpty
-        ? _repository.browse()
-        : _repository.search(initialQuery);
+        ? widget.repository.browse()
+        : widget.repository.search(initialQuery);
   }
 
   @override
@@ -38,7 +42,7 @@ class _NaveTopicsScreenState extends State<NaveTopicsScreen> {
   }
 
   void _search() => setState(() {
-        _results = _repository.search(_controller.text);
+        _results = widget.repository.search(_controller.text);
       });
 
   @override
@@ -91,8 +95,10 @@ class _NaveTopicsScreenState extends State<NaveTopicsScreen> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              NaveTopicDetailScreen(topic: topics[index]),
+                          builder: (_) => NaveTopicDetailScreen(
+                            topic: topics[index],
+                            repository: widget.repository,
+                          ),
                         ),
                       ),
                     ),
@@ -107,13 +113,20 @@ class _NaveTopicsScreenState extends State<NaveTopicsScreen> {
 
 class NaveTopicDetailScreen extends StatelessWidget {
   final NaveTopic topic;
-  const NaveTopicDetailScreen({super.key, required this.topic});
+  final NaveRepository repository;
+  final ValueChanged<NaveReference>? onOpenReference;
+  const NaveTopicDetailScreen({
+    super.key,
+    required this.topic,
+    this.repository = const NaveRepository(),
+    this.onOpenReference,
+  });
 
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: Text(topic.title)),
         body: FutureBuilder<List<NaveReference>>(
-          future: const NaveRepository().references(topic.id),
+          future: repository.references(topic.id),
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Center(child: CircularProgressIndicator());
@@ -157,9 +170,12 @@ class NaveTopicDetailScreen extends StatelessWidget {
                               items.first.subtopicEnglish)
                             const Padding(
                               padding: EdgeInsets.only(left: 8),
-                              child: Chip(
-                                visualDensity: VisualDensity.compact,
-                                label: Text('EN'),
+                              child: Tooltip(
+                                message: 'Section non encore traduite',
+                                child: Chip(
+                                  visualDensity: VisualDensity.compact,
+                                  label: Text('Non traduite'),
+                                ),
                               ),
                             ),
                         ],
@@ -171,22 +187,7 @@ class NaveTopicDetailScreen extends StatelessWidget {
                             '${ref.bookName} ${ref.chapter}:${ref.verseStart}'
                             '${ref.verseEnd == null ? '' : '-${ref.verseEnd}'}',
                           ),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ChapterReaderScreen(
-                                book: BibleBook(
-                                  id: ref.bookId,
-                                  name: ref.bookName,
-                                  abbreviation: '',
-                                  testament: '',
-                                  chaptersCount: ref.chaptersCount,
-                                ),
-                                initialChapter: ref.chapter,
-                                initialVerse: ref.verseStart,
-                              ),
-                            ),
-                          ),
+                          onTap: () => _openReference(context, ref),
                         );
                       }).toList(),
                     )),
@@ -195,6 +196,29 @@ class NaveTopicDetailScreen extends StatelessWidget {
           },
         ),
       );
+
+  void _openReference(BuildContext context, NaveReference reference) {
+    if (onOpenReference != null) {
+      onOpenReference!(reference);
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChapterReaderScreen(
+          book: BibleBook(
+            id: reference.bookId,
+            name: reference.bookName,
+            abbreviation: '',
+            testament: '',
+            chaptersCount: reference.chaptersCount,
+          ),
+          initialChapter: reference.chapter,
+          initialVerse: reference.verseStart,
+        ),
+      ),
+    );
+  }
 }
 
 Widget _resourceError(BuildContext context, Object? error) =>
@@ -203,8 +227,8 @@ Widget _resourceError(BuildContext context, Object? error) =>
           ? Icons.download_for_offline_outlined
           : Icons.error_outline,
       message: error is ResourceNotInstalledException
-          ? 'Nave n’est pas installé.'
-          : 'Impossible de charger les thèmes de Nave.',
+          ? 'Bible thématique Nave non installée.'
+          : 'Impossible de charger Nave.',
       actionLabel: 'Télécharger',
       onAction: () => Navigator.push(
         context,

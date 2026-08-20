@@ -174,6 +174,30 @@ void main() {
     expect(reopened.blocks[5].payload['items'], [5, 6]);
   });
 
+  test('un bloc Nave conserve le thème, la source et quelques références', () {
+    final now = DateTime(2026, 8, 20);
+    final block = StudyBlock(
+      id: 'nave-love',
+      type: StudyBlockType.nave,
+      position: 0,
+      payload: const {
+        'topicId': 42,
+        'title': 'Amour',
+        'titleEnglish': 'LOVE',
+        'translationStatus': 'manual',
+        'displayMode': 'summary',
+        'references': ['Jean 3:16', '1 Corinthiens 13:4-8'],
+      },
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    expect(block.plainText, contains('Amour'));
+    expect(block.plainText, contains('Bible thématique Nave'));
+    expect(block.plainText, contains('Jean 3:16'));
+    expect(StudyBlockType.parse('nave'), StudyBlockType.nave);
+  });
+
   test('export texte omet les métadonnées techniques', () {
     final now = DateTime.now();
     final study = PersonalStudy(

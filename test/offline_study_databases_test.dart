@@ -200,9 +200,38 @@ void main() {
       29,
     );
     expect(
+      await naveFrench.rawQuery('''
+        SELECT DISTINCT status FROM nave_translations
+        WHERE status NOT IN ('verified','manual','machine','pending')
+      '''),
+      isEmpty,
+    );
+    expect(
+      Sqflite.firstIntValue(await naveFrench.rawQuery(
+        "SELECT COUNT(*) FROM nave_translations WHERE status='manual'",
+      )),
+      1072,
+    );
+    expect(
       await naveFrench.rawQuery('PRAGMA integrity_check'),
       [containsValue('ok')],
     );
     await naveFrench.close();
+
+    final review = await File(
+      'bible_builder/translations/nave_fr_review.csv',
+    ).readAsLines();
+    expect(
+      review.first,
+      'entity_type,entity_id,source_en,translation_fr,status',
+    );
+    expect(
+      review.where(
+        (line) => line.endsWith(',manual') || line.endsWith(',pending'),
+      ),
+      hasLength(34701),
+    );
+    expect(review.where((line) => line.endsWith(',manual')), hasLength(1072));
+    expect(review.any((line) => line.endsWith(',editorial')), isFalse);
   });
 }

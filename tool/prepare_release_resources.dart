@@ -112,13 +112,16 @@ Future<void> _splitNaveModules(
     await frenchDb.execute('''CREATE TABLE nave_translations(
       entity_type TEXT NOT NULL,entity_id INTEGER NOT NULL,
       language_code TEXT NOT NULL,translated_text TEXT NOT NULL,
-      normalized_text TEXT NOT NULL,status TEXT NOT NULL,source TEXT NOT NULL,
+      normalized_text TEXT NOT NULL,status TEXT NOT NULL
+        CHECK(status IN ('verified','manual','machine','pending')),
+      source TEXT NOT NULL,
       notes TEXT,
       PRIMARY KEY(entity_type,entity_id,language_code))''');
     await frenchDb.execute('''CREATE TABLE nave_aliases(
       id INTEGER PRIMARY KEY AUTOINCREMENT,topic_id INTEGER NOT NULL,
       language_code TEXT NOT NULL,alias_text TEXT NOT NULL,
-      normalized_alias TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,
+      normalized_alias TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL
+        CHECK(status IN ('verified','manual','machine','pending')),
       UNIQUE(topic_id,language_code,normalized_alias))''');
     await frenchDb.execute(
         'CREATE INDEX idx_nave_translation_search ON nave_translations(language_code,entity_type,normalized_text)');
@@ -238,7 +241,7 @@ Future<void> _splitNaveModules(
     id: 'naveFrench',
     language: 'fr',
     category: 'nave',
-    version: '2',
+    version: '3',
     sourceUrl: 'https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave',
     license: 'CC BY-SA 4.0 (French translation layer)',
   ));

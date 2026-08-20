@@ -40,6 +40,7 @@ enum StudyBlockType {
   dictionary,
   crossReferences,
   comparison,
+  nave,
   quote,
   divider,
   image;
@@ -94,6 +95,8 @@ class StudyBlock {
             final value = item as Map<String, Object?>;
             return '${value['label']}: ${value['text']}';
           }).join('\n'),
+        StudyBlockType.nave => '${payload['title'] ?? ''}\n'
+            "Bible thématique Nave${(payload['references'] as List<Object?>? ?? const []).isEmpty ? '' : '\n${(payload['references'] as List<Object?>).join('\n')}'}",
         StudyBlockType.image => payload['caption'] as String? ?? 'Image',
       };
 

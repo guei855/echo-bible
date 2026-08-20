@@ -243,10 +243,10 @@ class ResourceManager {
       language: ResourceLanguage.fr,
       category: ResourceCategory.nave,
       description: 'Traductions françaises sans dupliquer les références.',
-      version: '2',
+      version: '3',
       sizeBytes: 360448,
       sha256:
-          '07603385720b79f5b0c8d48053fe7aa22e95cda973cf69f584c8bc0621ba3188',
+          '91dc8737450e391d836d02ec59b270e1a55ee4f877fa0475da5b5364670645a4',
       downloadUrl:
           _releaseBase == '' ? null : '$_releaseBase/fr/nave/nave_fr.db',
       license: 'CC BY-SA 4.0 (couche de traduction française)',

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-13T23:08:06.993887Z",
+  "generatedAt": "2026-08-20T22:38:24.548576Z",
   "resources": [
     {
       "id": "ostervald",
@@ -120,9 +120,9 @@
       "id": "naveFrench",
       "language": "fr",
       "category": "nave",
-      "version": "2",
+      "version": "3",
       "sizeBytes": 360448,
-      "sha256": "07603385720b79f5b0c8d48053fe7aa22e95cda973cf69f584c8bc0621ba3188",
+      "sha256": "91dc8737450e391d836d02ec59b270e1a55ee4f877fa0475da5b5364670645a4",
       "localFileName": "nave_fr.db",
       "releasePath": "fr/nave/nave_fr.db",
       "sourceUrl": "https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave",
