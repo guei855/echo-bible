@@ -57,6 +57,24 @@
       "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.0.0-resources/neo_crampon.db"
     },
     {
+      "id": "martin",
+      "language": "fr",
+      "category": "bible",
+      "name": "Bible David Martin 1744",
+      "shortName": "MAR",
+      "version": "1.0.0",
+      "sizeBytes": 5656576,
+      "sha256": "c3e6e651e87ea6ae1c751b12526500606a3e387be351114f42cc22258e140256",
+      "localFileName": "martin.db",
+      "releasePath": "fr/bibles/martin.db",
+      "source": "GetBible / CrossWire Bible Society",
+      "attribution": "Bible David Martin 1744 ; source structurée GetBible issue du module SWORD Martin",
+      "sourceUrl": "https://www.crosswire.org/sword/modules/ModInfo.jsp?modName=FreBDM1744",
+      "license": "Domaine public",
+      "downloadUrl": "https://github.com/guei855/echo-bible/releases/download/v1.2.0-resources/martin.db",
+      "status": "available"
+    },
+    {
       "id": "dictionary",
       "language": "fr",
       "category": "dictionary",

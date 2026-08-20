@@ -1,0 +1,8 @@
+La Sainte Bible, version David Martin 1744 — Domaine public.
+
+Référence de licence :
+https://www.crosswire.org/sword/modules/ModInfo.jsp?modName=FreBDM1744
+
+CrossWire indique explicitement « Distribution License: Public Domain ».
+Les métadonnées de la source structurée GetBible indiquent également
+« distribution_license: Public Domain ».

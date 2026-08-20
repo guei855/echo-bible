@@ -107,6 +107,22 @@ class _LexiconScreenState extends State<LexiconScreen>
               widget.repository.search(query))
           .timeout(const Duration(seconds: 15));
       if (!mounted) return;
+      final hasHebrew = results.any(
+        (entry) => entry.strongNumber.toUpperCase().startsWith('H'),
+      );
+      final hasGreek = results.any(
+        (entry) => entry.strongNumber.toUpperCase().startsWith('G'),
+      );
+      final normalizedQuery = query.toUpperCase();
+      if (normalizedQuery.startsWith('H') ||
+          RegExp(r'[\u0590-\u05FF]').hasMatch(query) ||
+          (hasHebrew && !hasGreek)) {
+        _tabs.index = 0;
+      } else if (normalizedQuery.startsWith('G') ||
+          RegExp(r'[\u0370-\u03FF\u1F00-\u1FFF]').hasMatch(query) ||
+          (hasGreek && !hasHebrew)) {
+        _tabs.index = 1;
+      }
       setState(() => _results = results);
     } on Object {
       if (!mounted) return;
@@ -147,7 +163,7 @@ class _LexiconScreenState extends State<LexiconScreen>
                     onSubmitted: (_) => _search(),
                     decoration: InputDecoration(
                       hintText:
-                          'Mot, lemme, translittération ou numéro Strong…',
+                          'Rechercher un mot, lemme, translittération ou Strong…',
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.manage_search),
                       suffixIcon: IconButton(

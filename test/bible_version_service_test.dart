@@ -13,11 +13,11 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('expose les quatre versions avec leurs textes hors ligne', () async {
+  test('expose les cinq versions avec leurs textes hors ligne', () async {
     final versions = await BibleVersionRepository.getInstalledVersions();
     expect(
       versions.map((version) => version.abbreviation),
-      containsAll(['LSG', 'DARBY', 'OST', 'NCL']),
+      containsAll(['LSG', 'DARBY', 'OST', 'NCL', 'MAR']),
     );
 
     final db = await DatabaseService.database;
@@ -40,7 +40,7 @@ void main() {
       chapterTexts.add(verses[1]['text'] as String);
     }
 
-    expect(chapterTexts.toSet(), hasLength(4));
+    expect(chapterTexts.toSet(), hasLength(5));
     final byVersion = {
       for (var index = 0; index < versions.length; index++)
         versions[index].abbreviation: chapterTexts[index],
@@ -48,6 +48,7 @@ void main() {
     expect(byVersion['OST'], startsWith('Or'));
     expect(byVersion['DARBY'], contains('désolation et vide'));
     expect(byVersion['NCL'], contains('informe et vide'));
+    expect(byVersion['MAR'], contains('sans forme, et vide'));
   });
 
   test('mémorise la version choisie', () async {

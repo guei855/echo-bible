@@ -1,4 +1,5 @@
 import 'package:echo_bible/core/services/database_service.dart';
+import 'package:echo_bible/features/bible/repositories/bible_version_repository.dart';
 import 'package:echo_bible/features/study/models/strong_entry.dart';
 import 'package:echo_bible/features/study/models/verse_study_data.dart';
 import 'package:echo_bible/features/study/repositories/strong_repository.dart';
@@ -95,35 +96,56 @@ class VerseStudyService {
     String strongCode, {
     int limit = 30,
     int offset = 0,
+    int? versionId,
   }) async {
-    final db = await DatabaseService.database;
     final sourceOccurrences = await const StrongRepository().occurrences(
       strongCode,
       limit: limit,
       offset: offset,
     );
     if (sourceOccurrences.isEmpty) return const [];
-    final clauses = List.filled(
-      sourceOccurrences.length,
-      '(v.book_id=? AND v.chapter_number=? AND v.verse_number=?)',
-    ).join(' OR ');
-    final arguments = <Object?>[
-      for (final occurrence in sourceOccurrences) ...[
+    final selectedVersionId =
+        versionId ?? (await BibleVersionRepository.getActiveVersion()).id;
+    final ranges = sourceOccurrences.map(
+      (occurrence) => (
         occurrence.bookId,
         occurrence.chapter,
         occurrence.verse,
-      ],
-    ];
-    final rows = await db.rawQuery('''
-      SELECT v.book_id,b.name AS book_name,b.chapters_count,
-        v.chapter_number,v.verse_number,v.text
-      FROM verses v JOIN books b ON b.id=v.book_id
-      WHERE $clauses
-    ''', arguments);
+        occurrence.verse,
+      ),
+    );
+    final rows = await BibleVersionRepository.getVersesForRanges(
+      versionId: selectedVersionId,
+      ranges: ranges,
+    );
     final verses = {
       for (final row in rows)
         '${row['book_id']}:${row['chapter_number']}:${row['verse_number']}':
             row,
+    };
+    if (verses.length < sourceOccurrences.length) {
+      final versions = await BibleVersionRepository.getInstalledVersions();
+      final fallback = versions.where((item) => item.isDefault).isEmpty
+          ? null
+          : versions.firstWhere((item) => item.isDefault);
+      if (fallback != null && fallback.id != selectedVersionId) {
+        final fallbackRows = await BibleVersionRepository.getVersesForRanges(
+          versionId: fallback.id,
+          ranges: ranges,
+        );
+        for (final row in fallbackRows) {
+          verses.putIfAbsent(
+            '${row['book_id']}:${row['chapter_number']}:${row['verse_number']}',
+            () => row,
+          );
+        }
+      }
+    }
+    final books = {
+      for (final book in await BibleVersionRepository.getBooks(
+        versionId: selectedVersionId,
+      ))
+        book.id: book,
     };
 
     return sourceOccurrences
@@ -131,10 +153,11 @@ class VerseStudyService {
           final row = verses[
               '${occurrence.bookId}:${occurrence.chapter}:${occurrence.verse}'];
           if (row == null) return null;
+          final book = books[occurrence.bookId];
           return StrongOccurrence(
             bookId: row['book_id'] as int,
-            bookName: row['book_name'] as String,
-            chaptersCount: row['chapters_count'] as int,
+            bookName: book?.name ?? 'Livre ${occurrence.bookId}',
+            chaptersCount: book?.chaptersCount ?? occurrence.chapter,
             chapterNumber: row['chapter_number'] as int,
             verseNumber: row['verse_number'] as int,
             verseText: row['text'] as String,

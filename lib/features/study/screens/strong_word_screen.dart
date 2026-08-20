@@ -64,6 +64,7 @@ class _StrongWordScreenState extends State<StrongWordScreen> {
         word.code,
         limit: _pageSize,
         offset: offset,
+        versionId: widget.initialVersionId,
       );
 
   @override

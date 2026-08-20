@@ -87,8 +87,14 @@ void main() {
     );
     expect(directionality.textDirection, TextDirection.rtl);
 
-    await tester.tap(find.text('Grec'));
+    await tester.enterText(
+      find.byKey(const Key('lexicon-search-field')),
+      'G3056',
+    );
+    await tester.tap(find.byKey(const Key('lexicon-search-button')));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('lexicon-entry-G3056')), findsOneWidget);
+
     await tester.enterText(
       find.byKey(const Key('lexicon-search-field')),
       'logos',
@@ -99,7 +105,7 @@ void main() {
     expect(find.text('λόγος'), findsOneWidget);
     expect(find.textContaining('Nom · Nominatif · Singulier · Masculin'),
         findsOneWidget);
-    expect(searched, ['H430', 'logos']);
+    expect(searched, ['H430', 'G3056', 'logos']);
   });
 
   testWidgets('une erreur termine toujours le chargement', (tester) async {

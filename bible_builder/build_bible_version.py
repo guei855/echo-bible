@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sqlite3
 import sys
@@ -79,6 +80,33 @@ def locate_usfx(source: Path) -> tuple[ET.Element, str]:
     return ET.parse(source).getroot(), source.name
 
 
+def extract_getbible_json(source: Path) -> tuple[list[tuple[int, int, int, str]], str]:
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if payload.get("distribution_license") != "Public Domain":
+        raise ValueError("La source GetBible n'est pas explicitement Public Domain")
+    books = payload.get("books")
+    if not isinstance(books, list) or len(books) != 66:
+        raise ValueError("Source GetBible: canon de 66 livres attendu")
+    verses: list[tuple[int, int, int, str]] = []
+    seen: set[tuple[int, int, int]] = set()
+    for book in books:
+        book_id = int(book["nr"])
+        if book_id not in range(1, 67):
+            raise ValueError(f"Source GetBible: book_id invalide: {book_id}")
+        for chapter in book.get("chapters", []):
+            chapter_number = int(chapter["chapter"])
+            for verse in chapter.get("verses", []):
+                verse_number = int(verse["verse"])
+                reference = (book_id, chapter_number, verse_number)
+                if reference in seen:
+                    raise ValueError(f"Source GetBible: verset dupliqué: {reference}")
+                seen.add(reference)
+                text = clean_text([str(verse.get("text", ""))])
+                if text:
+                    verses.append((*reference, text))
+    return verses, source.name
+
+
 def clean_text(parts: list[str]) -> str:
     value = "".join(parts).replace("\u00a0", " ").replace("\u202f", " ")
     return unicodedata.normalize("NFC", re.sub(r"\s+", " ", value)).strip()
@@ -141,8 +169,11 @@ def extract_verses(root: ET.Element) -> list[tuple[int, int, int, str]]:
 
 
 def build_database(options: argparse.Namespace) -> None:
-    root, source_file = locate_usfx(options.input)
-    verses = extract_verses(root)
+    if options.input.suffix.lower() == ".json":
+        verses, source_file = extract_getbible_json(options.input)
+    else:
+        root, source_file = locate_usfx(options.input)
+        verses = extract_verses(root)
     chapters = {(book, chapter) for book, chapter, _, _ in verses}
     if len(chapters) != 1189:
         raise ValueError(f"Canon incomplet: {len(chapters)} chapitres au lieu de 1189")

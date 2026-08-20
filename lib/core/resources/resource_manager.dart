@@ -116,13 +116,18 @@ class ResourceManager {
       shortName: 'MAR',
       language: ResourceLanguage.fr,
       category: ResourceCategory.bible,
-      description: 'Source numérique et licence exacte encore à valider.',
-      version: 'unavailable',
-      license: 'Validation de la source numérique requise',
-      source: 'En recherche',
-      sourceUrl: '',
+      description: 'Édition historique de David Martin, publiée en 1744.',
+      version: '1.0.0',
+      sizeBytes: 5656576,
+      sha256:
+          'c3e6e651e87ea6ae1c751b12526500606a3e387be351114f42cc22258e140256',
+      downloadUrl:
+          _releaseBase == '' ? null : '$_releaseBase/fr/bibles/martin.db',
+      license: 'Domaine public',
+      source: 'GetBible / CrossWire Bible Society',
+      sourceUrl:
+          'https://www.crosswire.org/sword/modules/ModInfo.jsp?modName=FreBDM1744',
       localFileName: 'martin.db',
-      redistributionStatus: RedistributionStatus.unavailable,
     ),
     OfflineResourceId.paroleDeVie: ResourceDescriptor(
       id: OfflineResourceId.paroleDeVie,

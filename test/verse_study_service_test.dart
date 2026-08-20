@@ -1,4 +1,5 @@
 import 'package:echo_bible/core/services/database_service.dart';
+import 'package:echo_bible/features/bible/repositories/bible_version_repository.dart';
 import 'package:echo_bible/features/study/services/verse_study_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,6 +38,16 @@ void main() {
     expect(occurrences.first.bookName, 'Genèse');
     expect(occurrences.first.chapterNumber, 1);
     expect(occurrences.first.verseNumber, 1);
+
+    final versions = await BibleVersionRepository.getInstalledVersions();
+    final martin = versions.singleWhere(
+      (version) => version.abbreviation == 'MAR',
+    );
+    final martinOccurrences = await VerseStudyService.loadOccurrences(
+      'H7225',
+      versionId: martin.id,
+    );
+    expect(martinOccurrences.first.verseText, contains('DIEU'));
 
     final genesisOneFour = await db.query(
       'verses',

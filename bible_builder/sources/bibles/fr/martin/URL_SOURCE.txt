@@ -1,0 +1,3 @@
+https://api.getbible.net/v2/martin.json
+https://api.getbible.net/v2/translations.json
+https://www.crosswire.org/sword/modules/ModInfo.jsp?modName=FreBDM1744

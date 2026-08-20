@@ -62,12 +62,50 @@ void main() {
         OfflineResourceState.notInstalled);
   });
 
-  test('valide les trois modules bibliques SQLite', () async {
-    for (final name in ['darby.db', 'ostervald.db', 'neo_crampon.db']) {
+  test('valide les quatre modules bibliques SQLite', () async {
+    for (final name in [
+      'darby.db',
+      'ostervald.db',
+      'neo_crampon.db',
+      'martin.db',
+    ]) {
       await ResourceManager.validateSqliteFile(
         File('release_resources/fr/bibles/$name').absolute.path,
       );
     }
+  });
+
+  test('Martin respecte le canon biblique complet', () async {
+    final database = await databaseFactory.openDatabase(
+      File('release_resources/fr/bibles/martin.db').absolute.path,
+      options: OpenDatabaseOptions(readOnly: true),
+    );
+    addTearDown(database.close);
+
+    final integrity = await database.rawQuery('PRAGMA integrity_check');
+    final bookCount = (await database.rawQuery(
+      'SELECT COUNT(*) AS total FROM books',
+    ))
+        .single['total'];
+    final chapterCount = (await database.rawQuery(
+      'SELECT COUNT(*) AS total FROM chapters',
+    ))
+        .single['total'];
+    final verseCount = (await database.rawQuery(
+      'SELECT COUNT(*) AS total FROM verses',
+    ))
+        .single['total'];
+    final canonicalBounds = await database.rawQuery(
+      'SELECT MIN(canonical_number) AS first, '
+      'MAX(canonical_number) AS last, '
+      'COUNT(DISTINCT canonical_number) AS total FROM books',
+    );
+
+    expect(integrity.single.values.single, 'ok');
+    expect(bookCount, 66);
+    expect(chapterCount, 1189);
+    expect(verseCount, 31057);
+    expect(canonicalBounds.single, {'first': 1, 'last': 66, 'total': 66});
   });
 
   test('refuse une base SQLite corrompue', () async {
@@ -81,7 +119,7 @@ void main() {
     );
   });
 
-  test('installe puis désinstalle Darby, Ostervald et Néo-Crampon', () async {
+  test('installe puis désinstalle les quatre Bibles téléchargeables', () async {
     final directory = await Directory.systemTemp.createTemp('echo-install-');
     addTearDown(() => directory.delete(recursive: true));
     final manager = ResourceManager(rootDirectory: directory);
@@ -89,6 +127,7 @@ void main() {
       OfflineResourceId.darby: 'darby.db',
       OfflineResourceId.ostervald: 'ostervald.db',
       OfflineResourceId.neoCrampon: 'neo_crampon.db',
+      OfflineResourceId.martin: 'martin.db',
     };
     for (final entry in modules.entries) {
       await manager.installFromFile(

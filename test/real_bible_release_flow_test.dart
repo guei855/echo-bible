@@ -20,7 +20,7 @@ void main() {
   });
 
   test(
-    'valide le parcours réel des trois Bibles publiées',
+    'valide le parcours réel des quatre Bibles publiées',
     () async {
       HttpOverrides.global = null;
       const manager = ResourceManager();
@@ -28,6 +28,7 @@ void main() {
         OfflineResourceId.darby,
         OfflineResourceId.ostervald,
         OfflineResourceId.neoCrampon,
+        OfflineResourceId.martin,
       ];
 
       Future<void> removeAll() async {
@@ -75,7 +76,7 @@ void main() {
       final installed = await BibleVersionRepository.getInstalledVersions();
       expect(
         installed.map((version) => version.abbreviation).toSet(),
-        {'LSG', 'DARBY', 'OST', 'NCL'},
+        {'LSG', 'DARBY', 'OST', 'NCL', 'MAR'},
       );
 
       final core = await DatabaseService.database;
@@ -97,8 +98,8 @@ void main() {
         );
         john316[version.abbreviation] = verse!['text'] as String;
       }
-      expect(john316.keys, {'LSG', 'DARBY', 'OST', 'NCL'});
-      expect(john316.values.toSet(), hasLength(4));
+      expect(john316.keys, {'LSG', 'DARBY', 'OST', 'NCL', 'MAR'});
+      expect(john316.values.toSet(), hasLength(5));
 
       HttpOverrides.global = _OfflineHttpOverrides();
       for (final version in installed) {

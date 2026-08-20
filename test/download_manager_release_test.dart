@@ -8,7 +8,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('affiche Télécharger pour les trois Bibles publiées',
+  testWidgets('affiche Télécharger pour les quatre Bibles publiées',
       (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -26,6 +26,7 @@ void main() {
       'Bible J.N. Darby',
       'Bible Ostervald',
       'Sainte Bible néo-Crampon Libre',
+      'Bible Martin',
     ]) {
       if (find.text(name).evaluate().isEmpty) {
         await tester.drag(find.byType(ListView), const Offset(0, -500));
