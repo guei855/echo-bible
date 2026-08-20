@@ -9,6 +9,7 @@ class VerseSelectionActionBar extends StatelessWidget {
   final VoidCallback onFavorite;
   final VoidCallback onCopy;
   final VoidCallback onShare;
+  final VoidCallback onCompare;
   final VoidCallback onStudy;
   final VoidCallback? onAddToStudy;
   final bool isFavorite;
@@ -22,6 +23,7 @@ class VerseSelectionActionBar extends StatelessWidget {
     required this.onFavorite,
     required this.onCopy,
     required this.onShare,
+    required this.onCompare,
     required this.onStudy,
     this.onAddToStudy,
     this.isFavorite = false,
@@ -90,6 +92,15 @@ class VerseSelectionActionBar extends StatelessWidget {
               const SizedBox(height: 6),
               Row(
                 children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      key: const Key('compare-selected-verses'),
+                      onPressed: onCompare,
+                      icon: const Icon(Icons.compare_arrows_rounded),
+                      label: const Text('COMPARER'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
                       key: const Key('study-selected-verses'),

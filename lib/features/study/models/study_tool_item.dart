@@ -1,6 +1,7 @@
 enum StudyToolType { notes, highlights, bookmarks, history }
 
 class StudyToolItem {
+  final int? sourceId;
   final int verseId;
   final int bookId;
   final String bookName;
@@ -12,8 +13,10 @@ class StudyToolItem {
   final String? detail;
   final String? color;
   final String? date;
+  final int versionId;
 
   const StudyToolItem({
+    this.sourceId,
     required this.verseId,
     required this.bookId,
     required this.bookName,
@@ -25,6 +28,7 @@ class StudyToolItem {
     this.detail,
     this.color,
     this.date,
+    this.versionId = 1,
   });
 }
 

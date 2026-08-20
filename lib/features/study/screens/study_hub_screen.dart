@@ -1,4 +1,3 @@
-import 'package:echo_bible/core/services/database_service.dart';
 import 'package:echo_bible/core/resources/resource_descriptor.dart';
 import 'package:echo_bible/core/resources/resource_manager.dart';
 import 'package:echo_bible/features/dictionary/screens/dictionary_screen.dart';
@@ -15,8 +14,8 @@ import 'package:echo_bible/features/study/screens/study_tabs_screen.dart';
 import 'package:echo_bible/features/study/repositories/cross_reference_repository.dart';
 import 'package:echo_bible/features/study/repositories/nave_repository.dart';
 import 'package:echo_bible/features/study/repositories/strong_repository.dart';
+import 'package:echo_bible/features/study/services/personal_study_service.dart';
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
 
 class StudyHubScreen extends StatefulWidget {
   const StudyHubScreen({super.key, this.loadStrongState});
@@ -49,14 +48,6 @@ class _StudyHubScreenState extends State<StudyHubScreen> {
   }
 
   Future<_StudyDataSummary> _loadSummary() async {
-    final db = await DatabaseService.database;
-    Future<int> count(String table) async {
-      return Sqflite.firstIntValue(
-            await db.rawQuery('SELECT COUNT(*) FROM $table'),
-          ) ??
-          0;
-    }
-
     Future<int> safe(Future<int> Function() loader) async {
       try {
         return await loader();
@@ -74,7 +65,7 @@ class _StudyHubScreenState extends State<StudyHubScreen> {
           : Future.value(0),
       safe(() => const NaveRepository().count()),
       safe(() => const CrossReferenceRepository().count()),
-      safe(() => count('personal_studies')),
+      safe(PersonalStudyService.countStudies),
     ]);
     return _StudyDataSummary(
       strongState: strongState,

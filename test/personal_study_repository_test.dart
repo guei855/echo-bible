@@ -113,6 +113,31 @@ void main() {
     expect(await repository.load(duplicate.id), isNotNull);
   });
 
+  test('countStudies suit créations, suppression et suppression totale',
+      () async {
+    final db = await openStudyDatabase();
+    addTearDown(db.close);
+    final repository =
+        PersonalStudyRepository(databaseProvider: () async => db);
+
+    final studies = <PersonalStudy>[];
+    for (var index = 0; index < 3; index++) {
+      studies.add(await repository.create(title: 'Étude $index'));
+    }
+    expect(await repository.countStudies(), 3);
+
+    await repository.delete(studies.first.id);
+    expect(await repository.countStudies(), 2);
+
+    studies.add(await repository.create(title: 'Nouvelle étude'));
+    expect(await repository.countStudies(), 3);
+
+    for (final study in await repository.loadAll()) {
+      await repository.delete(study.id);
+    }
+    expect(await repository.countStudies(), 0);
+  });
+
   test('préserve ordre et payload des types de blocs intelligents', () async {
     final db = await openStudyDatabase();
     addTearDown(db.close);

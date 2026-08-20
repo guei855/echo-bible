@@ -102,4 +102,49 @@ void main() {
 
     expect(find.byKey(const Key('verse-15')), findsOneWidget);
   });
+
+  testWidgets('le header étroit privilégie le nom long et déplace audio',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChapterReaderScreen(
+          book: BibleBook(
+            id: 10,
+            name: 'Deuxième livre de Samuel',
+            abbreviation: '2 S',
+            testament: 'Ancien Testament',
+            chaptersCount: 24,
+          ),
+          initialVerses: const [
+            {
+              'id': 1,
+              'book_id': 10,
+              'chapter_number': 1,
+              'verse_number': 1,
+              'text': 'Texte du premier verset.',
+              'uses_default_text': 0,
+            },
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Deuxième livre de Samuel 1'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byIcon(Icons.headphones_rounded),
+      ),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('reader-audio-control')), findsOneWidget);
+    expect(find.byKey(const Key('reader-more-menu')), findsOneWidget);
+  });
 }

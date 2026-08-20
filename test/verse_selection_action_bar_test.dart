@@ -9,6 +9,7 @@ void main() {
     ) async {
       var studied = false;
       var highlighted = false;
+      var compared = false;
       await tester.pumpWidget(
         MaterialApp(
           theme: ThemeData(brightness: brightness),
@@ -21,6 +22,7 @@ void main() {
               onFavorite: () {},
               onCopy: () {},
               onShare: () {},
+              onCompare: () => compared = true,
               onStudy: () => studied = true,
             ),
           ),
@@ -34,6 +36,7 @@ void main() {
         'Favoris',
         'Copier',
         'Partager',
+        'COMPARER',
         'ÉTUDIER',
       ]) {
         expect(find.text(label), findsOneWidget);
@@ -41,8 +44,10 @@ void main() {
 
       await tester.tap(find.text('Surligner'));
       await tester.tap(find.text('ÉTUDIER'));
+      await tester.tap(find.text('COMPARER'));
       expect(highlighted, isTrue);
       expect(studied, isTrue);
+      expect(compared, isTrue);
     });
   }
 
@@ -62,6 +67,7 @@ void main() {
                 onFavorite: () => setState(() => persisted = !persisted),
                 onCopy: () {},
                 onShare: () {},
+                onCompare: () {},
                 onStudy: () {},
               ),
             ),

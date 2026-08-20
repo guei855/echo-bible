@@ -45,6 +45,14 @@ class PersonalStudyRepository {
     return rows.isEmpty ? null : _fromRow(db, rows.first);
   }
 
+  Future<int> countStudies() async {
+    final db = await _databaseProvider();
+    return Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM study_documents'),
+        ) ??
+        0;
+  }
+
   Future<PersonalStudy> create({
     String title = 'Document sans titre',
     StudyDocumentType type = StudyDocumentType.free,
@@ -340,4 +348,5 @@ class PersonalStudyService {
   static Future<PersonalStudy> duplicate(PersonalStudy study) =>
       repository.duplicate(study);
   static Future<void> delete(int id) => repository.delete(id);
+  static Future<int> countStudies() => repository.countStudies();
 }

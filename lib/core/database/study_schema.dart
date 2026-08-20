@@ -164,6 +164,37 @@ class StudySchema {
       }
     }
 
+    final historyColumns = await db.rawQuery(
+      'PRAGMA table_info(reading_history)',
+    );
+    if (historyColumns.isNotEmpty) {
+      final names = historyColumns.map((column) => column['name']).toSet();
+      if (!names.contains('version_id')) {
+        await db.execute(
+          'ALTER TABLE reading_history '
+          'ADD COLUMN version_id INTEGER NOT NULL DEFAULT 1',
+        );
+      }
+      // Conserve uniquement la visite la plus récente pour chaque référence
+      // exacte. Cette migration est volontairement limitée aux vrais doublons.
+      await db.execute('''
+        DELETE FROM reading_history
+        WHERE id NOT IN (
+          SELECT MAX(id)
+          FROM reading_history
+          GROUP BY version_id, book_id, chapter, verse
+        )
+      ''');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_reading_history_recent '
+        'ON reading_history(read_at DESC, id DESC)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_reading_history_reference '
+        'ON reading_history(version_id, book_id, chapter, verse)',
+      );
+    }
+
     final planColumns = await db.rawQuery('PRAGMA table_info(reading_plans)');
     if (planColumns.isNotEmpty) {
       final names = planColumns.map((column) => column['name']).toSet();

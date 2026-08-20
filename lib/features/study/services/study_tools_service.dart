@@ -1,5 +1,6 @@
 import 'package:echo_bible/core/services/database_service.dart';
 import 'package:echo_bible/features/study/models/study_tool_item.dart';
+import 'package:echo_bible/features/study/services/personal_study_service.dart';
 import 'package:sqflite/sqflite.dart';
 
 class StudyToolsService {
@@ -11,13 +12,13 @@ class StudyToolsService {
       return Sqflite.firstIntValue(await db.rawQuery(sql)) ?? 0;
     }
 
-    final values = await Future.wait([
+    final values = await Future.wait<int>([
       count('SELECT COUNT(DISTINCT verse_id) FROM notes'),
       count('SELECT COUNT(DISTINCT verse_id) FROM highlights'),
       count('SELECT COUNT(DISTINCT verse_id) FROM favorites'),
       count('SELECT COUNT(*) FROM tags'),
       count('SELECT COUNT(*) FROM verse_links'),
-      count('SELECT COUNT(*) FROM personal_studies'),
+      PersonalStudyService.countStudies(),
       count('SELECT COUNT(*) FROM reading_history'),
     ]);
     return StudyToolsSummary(
@@ -67,7 +68,8 @@ class StudyToolsService {
       StudyToolType.history => await db.rawQuery('''
           SELECT v.id AS verse_id, v.book_id, b.name AS book_name,
             b.chapters_count, v.chapter_number, v.verse_number, v.text,
-            rh.read_at AS item_date
+            rh.id AS source_id, rh.read_at AS item_date,
+            rh.version_id
           FROM reading_history rh
           JOIN books b ON b.id = rh.book_id
           JOIN verses v ON v.book_id = rh.book_id
@@ -80,6 +82,7 @@ class StudyToolsService {
     return rows
         .map(
           (row) => StudyToolItem(
+            sourceId: row['source_id'] as int?,
             verseId: row['verse_id'] as int,
             bookId: row['book_id'] as int,
             bookName: row['book_name'] as String,
@@ -91,8 +94,41 @@ class StudyToolsService {
             detail: row['detail'] as String?,
             color: row['color'] as String?,
             date: row['item_date'] as String?,
+            versionId: row['version_id'] as int? ?? 1,
           ),
         )
         .toList();
+  }
+
+  static Future<void> deleteHistory(Iterable<int> ids) async {
+    final values = ids.toSet().toList();
+    if (values.isEmpty) return;
+    final db = await DatabaseService.database;
+    await db.delete(
+      'reading_history',
+      where: 'id IN (${List.filled(values.length, '?').join(', ')})',
+      whereArgs: values,
+    );
+  }
+
+  static Future<void> clearHistory() async {
+    final db = await DatabaseService.database;
+    await db.delete('reading_history');
+  }
+
+  static Future<void> restoreHistory(Iterable<StudyToolItem> items) async {
+    final db = await DatabaseService.database;
+    await db.transaction((transaction) async {
+      for (final item in items) {
+        await transaction.insert('reading_history', {
+          if (item.sourceId != null) 'id': item.sourceId,
+          'book_id': item.bookId,
+          'chapter': item.chapterNumber,
+          'verse': item.verseNumber,
+          'version_id': item.versionId,
+          'read_at': item.date ?? DateTime.now().toIso8601String(),
+        });
+      }
+    });
   }
 }

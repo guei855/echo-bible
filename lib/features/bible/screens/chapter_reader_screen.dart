@@ -191,7 +191,11 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
     );
     try {
       await DatabaseService.saveReadingHistory(
-          widget.book.id, chapterNumber, 1);
+        widget.book.id,
+        chapterNumber,
+        chapterNumber == widget.initialChapter ? widget.initialVerse ?? 1 : 1,
+        versionId: _selectedVersionId,
+      );
     } catch (_) {}
 
     final verseIds = result.map((verse) => verse['id'] as int).toList();
@@ -307,8 +311,10 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 20),
                     physics: const BouncingScrollPhysics(),
-                    itemCount: _verses.length,
+                    itemCount: _verses.length + 1,
                     itemBuilder: (context, index) {
+                      if (index == 0) return _buildAudioControl();
+                      index--;
                       final verse = _verses[index];
                       final verseId = verse['id'] as int;
                       final verseNumber = verse['verse_number'] as int;
@@ -524,6 +530,7 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
               onFavorite: _toggleFavorites,
               onCopy: _copySelectedVerses,
               onShare: _shareSelectedVerses,
+              onCompare: _openComparison,
               onStudy: () => _openVerseStudy(_selectedVerses.first),
               onAddToStudy: _addSelectedVersesToStudy,
             ),
@@ -631,23 +638,36 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
               ),
             ),
           ),
-        IconButton(
-          icon: const Icon(Icons.headphones_rounded),
-          tooltip: 'Audio Bible',
-          onPressed: _showAudioBibleInfo,
-        ),
-        IconButton(
-          icon: Badge(
-            label: Text(_versions.length >= 3 ? '3' : '2'),
-            child: const Icon(Icons.library_books_outlined),
-          ),
-          tooltip: 'Comparer les versions',
-          onPressed: _versions.length < 2 ? null : _openComparison,
-        ),
-        IconButton(
-          icon: const Icon(Icons.text_fields_rounded),
-          tooltip: 'Paramètres de lecture',
-          onPressed: _showReaderSettings,
+        PopupMenuButton<String>(
+          key: const Key('reader-more-menu'),
+          tooltip: 'Plus d’options',
+          onSelected: (value) {
+            switch (value) {
+              case 'parallel':
+                _openChapterComparison();
+              case 'settings':
+                _showReaderSettings();
+            }
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'parallel',
+              enabled: _versions.length >= 2,
+              child: const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.view_column_outlined),
+                title: Text('Affichage parallèle'),
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'settings',
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.text_fields_rounded),
+                title: Text('Taille et affichage du texte'),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -762,6 +782,22 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
           chapter: _currentChapter,
           verse: verse,
           verseEnd: selected.isEmpty ? null : selected.last,
+          initialVersionId: _selectedVersionId,
+        ),
+      ),
+    );
+  }
+
+  void _openChapterComparison() {
+    if (_verses.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ParallelComparisonScreen(
+          book: widget.book,
+          chapter: _currentChapter,
+          verse: _verses.first['verse_number'] as int,
+          verseEnd: _verses.last['verse_number'] as int,
           initialVersionId: _selectedVersionId,
         ),
       ),
@@ -1046,6 +1082,23 @@ class _ChapterReaderScreenState extends State<ChapterReaderScreen> {
       ),
     );
   }
+
+  Widget _buildAudioControl() => Center(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: OutlinedButton.icon(
+            key: const Key('reader-audio-control'),
+            onPressed: _showAudioBibleInfo,
+            icon: const Icon(Icons.headphones_rounded, size: 19),
+            label: const Text('Audio'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              backgroundColor: _palette.surface,
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+        ),
+      );
 
   void _showAudioBibleInfo() {
     showModalBottomSheet<void>(
