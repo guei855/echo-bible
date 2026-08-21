@@ -1,6 +1,7 @@
 import 'package:echo_bible/core/resources/language_settings_service.dart';
 import 'package:echo_bible/core/resources/resource_descriptor.dart';
 import 'package:echo_bible/core/services/database_service.dart';
+import 'package:echo_bible/features/bible/repositories/bible_version_repository.dart';
 import 'package:echo_bible/features/study/models/nave_topic.dart';
 import 'package:echo_bible/features/study/services/nave_database_service.dart';
 import 'package:echo_bible/features/study/services/nave_translation_service.dart';
@@ -97,7 +98,7 @@ class NaveRepository {
         (left, right) =>
             normalize(left.title).compareTo(normalize(right.title)),
       );
-      return topics.take(limit).toList(growable: false);
+      return _withCounts(db, topics.take(limit).toList(growable: false));
     });
   }
 
@@ -148,7 +149,7 @@ class NaveRepository {
         );
         if (results.length == limit) break;
       }
-      return results.values.toList(growable: false);
+      return _withCounts(db, results.values.toList(growable: false));
     });
   }
 
@@ -169,26 +170,81 @@ class NaveRepository {
             rows.map((row) => row['section_id']! as int),
           )
         : const <int, NaveLocalizedText>{};
-    final bibleDb = await DatabaseService.database;
+    final activeVersion = await BibleVersionRepository.getActiveVersion();
+    final installedVersions =
+        await BibleVersionRepository.getInstalledVersions();
+    final fallbackVersion = installedVersions.firstWhere(
+      (version) => version.isDefault,
+      orElse: () => activeVersion,
+    );
+    final ranges = rows.map((row) => (
+          row['book_id']! as int,
+          row['chapter']! as int,
+          row['verse_start']! as int,
+          row['verse_end'] as int? ?? row['verse_start']! as int,
+        ));
+    final activeRows = await _loadVerseRanges(activeVersion.id, ranges);
+    final verseTexts = _verseTextMap(activeRows);
+    final fallbackTexts = activeVersion.id == fallbackVersion.id
+        ? const <String, String>{}
+        : _verseTextMap(
+            await _loadVerseRanges(fallbackVersion.id, ranges),
+          );
     final books = {
+      for (final book in await BibleVersionRepository.getBooks(
+        versionId: activeVersion.id,
+      ))
+        book.id: book,
+    };
+    final bibleDb = await DatabaseService.database;
+    final fallbackBooks = {
       for (final row in await bibleDb.query('books')) row['id'] as int: row,
     };
     return rows.map((row) {
       final sectionId = row['section_id']! as int;
       final english = row['subtopic_en']! as String;
       final translated = translations[sectionId];
-      final book = books[row['book_id']]!;
+      final bookId = row['book_id']! as int;
+      final chapter = row['chapter']! as int;
+      final verseStart = row['verse_start']! as int;
+      final verseEnd = row['verse_end'] as int? ?? verseStart;
+      final activeText = _rangeText(
+        verseTexts,
+        bookId,
+        chapter,
+        verseStart,
+        verseEnd,
+      );
+      final fallbackText = activeText == null
+          ? _rangeText(
+              fallbackTexts,
+              bookId,
+              chapter,
+              verseStart,
+              verseEnd,
+            )
+          : null;
+      final book = books[bookId];
+      final fallbackBook = fallbackBooks[bookId]!;
       return NaveReference(
+        id: row['id']! as int,
         subtopicId: sectionId,
         subtopic: translated?.text ?? english,
         subtopicEnglish: english,
         translationStatus: translated?.status,
-        bookId: row['book_id']! as int,
-        bookName: book['name']! as String,
-        chaptersCount: book['chapters_count']! as int,
-        chapter: row['chapter']! as int,
-        verseStart: row['verse_start']! as int,
+        bookId: bookId,
+        bookName: book?.name ?? fallbackBook['name']! as String,
+        chaptersCount:
+            book?.chaptersCount ?? fallbackBook['chapters_count']! as int,
+        chapter: chapter,
+        verseStart: verseStart,
         verseEnd: row['verse_end'] as int?,
+        verseText: activeText ?? fallbackText,
+        versionId: activeVersion.id,
+        versionAbbreviation: activeText == null && fallbackText != null
+            ? fallbackVersion.abbreviation
+            : activeVersion.abbreviation,
+        usesDefaultText: activeText == null && fallbackText != null,
       );
     }).toList(growable: false);
   }
@@ -242,7 +298,8 @@ class NaveRepository {
     final placeholders = List.filled(exactForms.length, '?').join(',');
     return db.rawQuery('''
       SELECT id,title_en,
-        CASE WHEN normalized_en IN ($placeholders) THEN 4 ELSE 5 END rank
+        CASE WHEN normalized_en IN ($placeholders) THEN 4
+          WHEN normalized_en LIKE ? THEN 5 ELSE 6 END rank
       FROM nave_topics
       WHERE normalized_en IN ($placeholders) OR normalized_en LIKE ?
       ORDER BY rank,normalized_en,id
@@ -250,9 +307,76 @@ class NaveRepository {
     ''', [
       ...exactForms,
       ...exactForms,
+      '$query%',
       '%$query%',
       limit,
     ]);
+  }
+
+  Future<List<NaveTopic>> _withCounts(
+    Database db,
+    List<NaveTopic> topics,
+  ) async {
+    if (topics.isEmpty) return topics;
+    final ids = topics.map((topic) => topic.id).toList(growable: false);
+    final placeholders = List.filled(ids.length, '?').join(',');
+    final rows = await db.rawQuery('''
+      SELECT topic_id,COUNT(DISTINCT section_id) section_count,
+        COUNT(*) reference_count
+      FROM nave_references
+      WHERE topic_id IN ($placeholders)
+      GROUP BY topic_id
+    ''', ids);
+    final counts = {for (final row in rows) row['topic_id'] as int: row};
+    return [
+      for (final topic in topics)
+        NaveTopic(
+          id: topic.id,
+          title: topic.title,
+          titleEnglish: topic.titleEnglish,
+          translationStatus: topic.translationStatus,
+          sectionCount: counts[topic.id]?['section_count'] as int? ?? 0,
+          referenceCount: counts[topic.id]?['reference_count'] as int? ?? 0,
+        ),
+    ];
+  }
+
+  Future<List<Map<String, Object?>>> _loadVerseRanges(
+    int versionId,
+    Iterable<(int, int, int, int)> ranges,
+  ) async {
+    final values = ranges.toSet().toList(growable: false);
+    final result = <Map<String, Object?>>[];
+    for (var offset = 0; offset < values.length; offset += 200) {
+      final end = offset + 200 < values.length ? offset + 200 : values.length;
+      result.addAll(await BibleVersionRepository.getVersesForRanges(
+        versionId: versionId,
+        ranges: values.sublist(offset, end),
+      ));
+    }
+    return result;
+  }
+
+  Map<String, String> _verseTextMap(List<Map<String, Object?>> rows) => {
+        for (final row in rows)
+          '${row['book_id']}:${row['chapter_number']}:${row['verse_number']}':
+              row['text']! as String,
+      };
+
+  String? _rangeText(
+    Map<String, String> verses,
+    int bookId,
+    int chapter,
+    int start,
+    int end,
+  ) {
+    final texts = <String>[];
+    for (var verse = start; verse <= end; verse++) {
+      final text = verses['$bookId:$chapter:$verse'];
+      if (text == null) return null;
+      texts.add(text);
+    }
+    return texts.join(' ');
   }
 
   Future<Map<int, String>> _englishTitles(

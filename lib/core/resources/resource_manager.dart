@@ -230,10 +230,10 @@ class ResourceManager {
       language: ResourceLanguage.en,
       category: ResourceCategory.nave,
       description: 'Index thématique original anglais et références.',
-      version: '3.0',
-      sizeBytes: 4378624,
+      version: '3.1',
+      sizeBytes: 5758976,
       sha256:
-          '097a8fda5d53b4abb2fbe00375c4586ea49a7417ada2c31d37426910fbef02e0',
+          'a3376d1ea157118043c599e538b8df78e5e8280eef9911cc29a02fa3460b1314',
       downloadUrl:
           _releaseBase == '' ? null : '$_releaseBase/en/nave/nave_core.db',
       license: 'Domaine public',
@@ -248,10 +248,10 @@ class ResourceManager {
       language: ResourceLanguage.fr,
       category: ResourceCategory.nave,
       description: 'Traductions françaises sans dupliquer les références.',
-      version: '3',
-      sizeBytes: 360448,
+      version: '4',
+      sizeBytes: 368640,
       sha256:
-          '91dc8737450e391d836d02ec59b270e1a55ee4f877fa0475da5b5364670645a4',
+          '0e861ec435478995af836fcffa13241c606b86bff43eeae5bb1261e375a3dd19',
       downloadUrl:
           _releaseBase == '' ? null : '$_releaseBase/fr/nave/nave_fr.db',
       license: 'CC BY-SA 4.0 (couche de traduction française)',

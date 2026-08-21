@@ -33,6 +33,7 @@ class _FakeNaveRepository extends NaveRepository {
   }) async =>
       const [
         NaveReference(
+          id: 1,
           subtopicId: 1,
           subtopic: 'Amour de Dieu',
           subtopicEnglish: 'LOVE OF GOD',
@@ -42,6 +43,30 @@ class _FakeNaveRepository extends NaveRepository {
           chaptersCount: 21,
           chapter: 3,
           verseStart: 16,
+        ),
+        NaveReference(
+          id: 2,
+          subtopicId: 1,
+          subtopic: 'Amour de Dieu',
+          subtopicEnglish: 'LOVE OF GOD',
+          translationStatus: 'manual',
+          bookId: 45,
+          bookName: 'Romains',
+          chaptersCount: 16,
+          chapter: 5,
+          verseStart: 8,
+        ),
+        NaveReference(
+          id: 3,
+          subtopicId: 1,
+          subtopic: 'Amour de Dieu',
+          subtopicEnglish: 'LOVE OF GOD',
+          translationStatus: 'manual',
+          bookId: 62,
+          bookName: '1 Jean',
+          chaptersCount: 5,
+          chapter: 4,
+          verseStart: 8,
         ),
       ];
 }
@@ -124,6 +149,7 @@ void main() {
       (tester) async {
     final now = DateTime.now();
     PersonalStudy? saved;
+    QuillController? activeController;
     final study = PersonalStudy(
       id: 77,
       title: 'Étude sur l’amour',
@@ -132,7 +158,12 @@ void main() {
           id: 'nave-anchor',
           type: StudyBlockType.text,
           position: 0,
-          payload: const {'text': ''},
+          payload: const {
+            'format': 'quill_delta_v1',
+            'delta': [
+              {'insert': 'AAA\nBBB\n'},
+            ],
+          },
           createdAt: now,
           updatedAt: now,
         ),
@@ -144,8 +175,13 @@ void main() {
       study: study,
       naveRepository: const _FakeNaveRepository(),
       autosaveDelay: const Duration(milliseconds: 20),
+      onActiveController: (controller) => activeController = controller,
       saveDocument: (value) async => saved = value,
     )));
+    activeController!.updateSelection(
+      const TextSelection.collapsed(offset: 4),
+      ChangeSource.local,
+    );
     final toolbar = tester.widget<SingleChildScrollView>(
       find.byKey(const Key('study-toolbar-horizontal-scroll')),
     );
@@ -170,8 +206,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Insérer un résumé avec références'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(CheckboxListTile).first);
-    await tester.pump();
+    for (final checkbox in find.byType(CheckboxListTile).evaluate()) {
+      await tester.tap(find.byWidget(checkbox.widget));
+      await tester.pump();
+    }
     await tester.tap(find.widgetWithText(FilledButton, 'Insérer'));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 30));
@@ -181,9 +219,27 @@ void main() {
     );
     expect(nave.payload['topicId'], 7);
     expect(nave.payload['titleEnglish'], 'LOVE');
-    expect(nave.payload['references'], ['Jean 3:16']);
+    expect(nave.payload['references'], [
+      'Jean 3:16',
+      'Romains 5:8',
+      '1 Jean 4:8',
+    ]);
+    expect(saved!.blocks.map((block) => block.plainText), [
+      'AAA',
+      contains('Amour'),
+      'BBB',
+    ]);
     expect(find.text('Bible thématique Nave'), findsOneWidget);
     expect(find.text('Ouvrir le thème →'), findsOneWidget);
+
+    await tester.pumpWidget(app(PersonalStudyEditorScreen(
+      study: saved!,
+      naveRepository: const _FakeNaveRepository(),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Jean 3:16'), findsOneWidget);
+    expect(find.textContaining('Romains 5:8'), findsOneWidget);
+    expect(find.textContaining('1 Jean 4:8'), findsOneWidget);
   });
 
   testWidgets('le gras est WYSIWYG et aucun marqueur ne devient visible',

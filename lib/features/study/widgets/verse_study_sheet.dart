@@ -429,6 +429,7 @@ class _VerseStudySheetState extends State<VerseStudySheet> {
         VerseStudyTool.dictionary => const _DictionaryPanel(),
         VerseStudyTool.topics => _TopicsPanel(
             bookId: _book.id,
+            bookName: _book.name,
             chapter: _chapter,
             verse: _verse.verseNumber,
             searchQuery: _isInitialReference ? widget.selectedText : null,
@@ -638,6 +639,7 @@ class _DictionaryPanel extends StatelessWidget {
 
 class _TopicsPanel extends StatelessWidget {
   final int bookId;
+  final String bookName;
   final int chapter;
   final int verse;
   final String? searchQuery;
@@ -645,6 +647,7 @@ class _TopicsPanel extends StatelessWidget {
 
   const _TopicsPanel({
     required this.bookId,
+    required this.bookName,
     required this.chapter,
     required this.verse,
     this.searchQuery,
@@ -702,6 +705,19 @@ class _TopicsPanel extends StatelessWidget {
           }
           return Column(
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Thèmes associés à $bookName $chapter:$verse',
+                    key: const Key('nave-associated-topics-heading'),
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+              ),
               if (searchQuery?.trim().isNotEmpty == true)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),

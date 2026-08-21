@@ -1,5 +1,6 @@
 import 'package:echo_bible/features/study/models/personal_study.dart';
 import 'package:echo_bible/features/study/services/personal_study_service.dart';
+import 'package:echo_bible/features/study/services/study_rich_text_codec.dart';
 import 'package:echo_bible/features/study/widgets/study_creation_sheet.dart';
 import 'package:echo_bible/features/study/widgets/study_document_type_ui.dart';
 import 'package:flutter/material.dart';
@@ -230,13 +231,21 @@ class _StudyDestinationSheetState extends State<StudyDestinationSheet> {
     });
     try {
       final now = DateTime.now();
+      final blocks = [...study.blocks];
+      final insertionIndex = blocks.isNotEmpty &&
+              StudyRichTextCodec.isRichText(blocks.last) &&
+              StudyRichTextCodec.plainTextFromPayload(blocks.last.payload)
+                  .isEmpty
+          ? blocks.length - 1
+          : blocks.length;
+      blocks.insert(
+        insertionIndex,
+        widget.block.copyWith(position: insertionIndex, updatedAt: now),
+      );
       final updated = study.copyWith(
         blocks: [
-          ...study.blocks,
-          widget.block.copyWith(
-            position: study.blocks.length,
-            updatedAt: now,
-          ),
+          for (var index = 0; index < blocks.length; index++)
+            blocks[index].copyWith(position: index),
         ],
         updatedAt: now,
       );

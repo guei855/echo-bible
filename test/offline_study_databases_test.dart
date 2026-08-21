@@ -178,6 +178,14 @@ void main() {
             where: 'normalized_en=?', whereArgs: ['faith']),
         isNotEmpty);
     expect(await nave.query('nave_translations'), isEmpty);
+    expect(
+      await nave.query(
+        'sqlite_master',
+        where: 'type=? AND name=?',
+        whereArgs: ['index', 'idx_nave_refs_verse'],
+      ),
+      isNotEmpty,
+    );
     await nave.close();
 
     final naveFrench = await openModule('fr/nave/nave_fr.db');
@@ -185,7 +193,7 @@ void main() {
       Sqflite.firstIntValue(await naveFrench.rawQuery(
         "SELECT COUNT(*) FROM nave_translations WHERE entity_type='topic'",
       )),
-      54,
+      87,
     );
     expect(
       Sqflite.firstIntValue(await naveFrench.rawQuery(
@@ -197,7 +205,7 @@ void main() {
       Sqflite.firstIntValue(
         await naveFrench.rawQuery('SELECT COUNT(*) FROM nave_aliases'),
       ),
-      29,
+      53,
     );
     expect(
       await naveFrench.rawQuery('''
@@ -210,7 +218,7 @@ void main() {
       Sqflite.firstIntValue(await naveFrench.rawQuery(
         "SELECT COUNT(*) FROM nave_translations WHERE status='manual'",
       )),
-      1072,
+      1105,
     );
     expect(
       await naveFrench.rawQuery('PRAGMA integrity_check'),
@@ -223,15 +231,15 @@ void main() {
     ).readAsLines();
     expect(
       review.first,
-      'entity_type,entity_id,source_en,translation_fr,status',
+      'entity_type,entity_id,source_en,translation_fr,status,notes',
     );
     expect(
       review.where(
-        (line) => line.endsWith(',manual') || line.endsWith(',pending'),
+        (line) => line.contains(',manual,') || line.endsWith(',pending,'),
       ),
       hasLength(34701),
     );
-    expect(review.where((line) => line.endsWith(',manual')), hasLength(1072));
+    expect(review.where((line) => line.contains(',manual,')), hasLength(1105));
     expect(review.any((line) => line.endsWith(',editorial')), isFalse);
   });
 }

@@ -88,6 +88,8 @@ Future<void> _splitNaveModules(
         .execute('UPDATE nave_topics SET title_fr=NULL,normalized_fr=NULL');
     await coreDb.execute('UPDATE nave_sections SET title_fr=NULL');
     await coreDb.execute('DELETE FROM nave_translations');
+    await coreDb.execute('''CREATE INDEX IF NOT EXISTS idx_nave_refs_verse
+      ON nave_references(book_id,chapter,verse_start,verse_end,topic_id)''');
     await coreDb.execute('VACUUM');
   } finally {
     await coreDb.close();
@@ -97,7 +99,7 @@ Future<void> _splitNaveModules(
     id: 'nave',
     language: 'en',
     category: 'nave',
-    version: '3.0',
+    version: '3.1',
     sourceUrl: 'https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave',
     license: 'Public Domain',
   ));
@@ -215,7 +217,7 @@ Future<void> _splitNaveModules(
         batch.insert('nave_aliases', row);
       }
       batch.insert('metadata', {'key': 'language', 'value': language});
-      batch.insert('metadata', {'key': 'version', 'value': '2'});
+      batch.insert('metadata', {'key': 'version', 'value': '4'});
       batch.insert('metadata', {'key': 'license', 'value': 'CC BY-SA 4.0'});
       batch.insert('metadata', {'key': 'source', 'value': source});
       batch.insert('metadata', {
@@ -241,7 +243,7 @@ Future<void> _splitNaveModules(
     id: 'naveFrench',
     language: 'fr',
     category: 'nave',
-    version: '3',
+    version: '4',
     sourceUrl: 'https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave',
     license: 'CC BY-SA 4.0 (French translation layer)',
   ));

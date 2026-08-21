@@ -1,4 +1,5 @@
 import 'package:echo_bible/core/resources/resource_descriptor.dart';
+import 'package:echo_bible/features/bible/repositories/bible_version_repository.dart';
 import 'package:echo_bible/features/study/repositories/nave_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,7 +53,12 @@ void main() {
       () async {
     const repository = NaveRepository();
     const groups = {
+      'Amour': ['amour', 'AMOUR', 'Amour'],
+      'Foi': ['foi', 'FOI', 'Foi'],
       'Grâce de Dieu': ['GRACE', 'Grace', 'grâce', 'grace', 'grâces'],
+      'Salut': ['salut', 'SALUT', 'Salut'],
+      'Prière': ['prière', 'PRIERE', 'priere'],
+      'Péché': ['péché', 'PECHE', 'peche'],
       'Jésus-Christ': ['JESUS', 'Jesus', 'Jésus'],
       'Église': ['EGLISE', 'eglise', 'Église', 'églises'],
       'Saint-Esprit': [
@@ -61,6 +67,7 @@ void main() {
         'Esprit Saint',
         'Holy Spirit',
       ],
+      'Écritures': ['Ecriture', 'Écriture', 'Ecritures', 'Écritures'],
       'Moïse': ['MOISE', 'Moise', 'Moïse'],
     };
     for (final group in groups.entries) {
@@ -168,5 +175,80 @@ void main() {
     expect(linkedTopics, isNotEmpty);
     expect(
         linkedTopics.every((topic) => topic.titleEnglish.isNotEmpty), isTrue);
+    expect(
+      linkedTopics.map((topic) => topic.titleEnglish),
+      containsAll([
+        'CREATION',
+        'EARTH',
+        'GOD',
+        'HEAVEN',
+        'JESUS, THE CHRIST',
+        'MIRACLES',
+        'TIME',
+      ]),
+    );
+  });
+
+  test('le corpus V2 couvre les thèmes et personnes réellement présents',
+      () async {
+    const repository = NaveRepository();
+    const expected = {
+      'Trinité': 'TRINITY',
+      'Loi': 'LAW',
+      'Louange': 'PRAISE',
+      'Sainteté': 'HOLINESS',
+      'Justice': 'JUSTICE',
+      'Jugement': 'JUDGMENT',
+      'Mission': 'MISSIONS',
+      'Famille': 'FAMILY',
+      'Enfant': 'CHILDREN',
+      'Sagesse': 'WISDOM',
+      'Obéissance': 'OBEDIENCE',
+      'Souffrance': 'SUFFERING',
+      'Persécution': 'PERSECUTION',
+      'Pasteur': 'PASTOR',
+      'Serviteur': 'SERVANT',
+      'Offrande': 'OFFERINGS',
+      'Dîme': 'TITHES',
+      'Miracle': 'MIRACLES',
+      'Guérison': 'CURES',
+      'Promesse': 'PROMISES',
+      'Ève': 'EVE',
+      'Noé': 'NOAH',
+      'Isaac': 'ISAAC',
+      'Jacob': 'JACOB',
+      'Josué': 'JOSHUA',
+      'Salomon': 'SOLOMON',
+      'Élie': 'ELIJAH',
+      'Élisée': 'ELISHA',
+      'Ésaïe': 'ISAIAH',
+      'Jérémie': 'JEREMIAH',
+      'Daniel': 'DANIEL',
+    };
+    for (final entry in expected.entries) {
+      final result = (await repository.search(entry.key)).first;
+      expect(result.titleEnglish, entry.value, reason: entry.key);
+      expect(result.translationStatus, 'manual', reason: entry.key);
+    }
+  });
+
+  test('les aperçus Nave suivent chacune des cinq versions installées',
+      () async {
+    const repository = NaveRepository();
+    final grace = (await repository.search('Grâce')).first;
+    final versions = await BibleVersionRepository.getInstalledVersions();
+    expect(versions.map((version) => version.abbreviation),
+        containsAll(['LSG', 'DARBY', 'OST', 'NCL', 'MAR']));
+    for (final version in versions) {
+      await BibleVersionRepository.setActiveVersion(version.id);
+      final references = await repository.references(grace.id);
+      expect(references, isNotEmpty, reason: version.abbreviation);
+      expect(references.first.verseText, isNotEmpty,
+          reason: version.abbreviation);
+      expect(references.first.versionAbbreviation, version.abbreviation,
+          reason: version.abbreviation);
+      expect(references.first.versionId, version.id,
+          reason: version.abbreviation);
+    }
   });
 }

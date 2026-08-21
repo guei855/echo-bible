@@ -317,5 +317,6 @@ void main() {
 
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.controller?.text, 'grâce');
+    expect(find.text('Résultats pour « grâce »'), findsOneWidget);
   });
 }
