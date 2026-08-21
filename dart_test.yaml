@@ -1,0 +1,4 @@
+# Les suites Flutter partagent intentionnellement la base SQLite locale afin de
+# tester les migrations réelles. Une exécution séquentielle évite que plusieurs
+# processus copient ou migrent le même fichier au même instant.
+concurrency: 1

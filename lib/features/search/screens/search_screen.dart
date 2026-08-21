@@ -178,7 +178,10 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: HighlightedText(
                     text: item.text,
                     query: _lastQuery,
-                    style: const TextStyle(fontSize: 15, color: Colors.black87),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                          fontSize: 15,
+                        ),
                   ),
                 ),
                 onTap: () => _openResult(item),

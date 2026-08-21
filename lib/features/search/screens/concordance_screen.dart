@@ -26,6 +26,7 @@ class _ConcordanceScreenState extends State<ConcordanceScreen>
   String _query = '';
   String? _errorMessage;
   bool _isLoading = false;
+  int _requestId = 0;
 
   bool get _isStrongTab => _tabController.index == 1;
 
@@ -37,7 +38,13 @@ class _ConcordanceScreenState extends State<ConcordanceScreen>
       initialIndex: widget.initialTab == 1 ? 1 : 0,
       vsync: this,
     )..addListener(() {
-        if (!_tabController.indexIsChanging && mounted) setState(() {});
+        if (!_tabController.indexIsChanging && mounted) {
+          _requestId++;
+          setState(() {
+            _isLoading = false;
+            _errorMessage = null;
+          });
+        }
       });
     if (widget.initialQuery?.isNotEmpty ?? false) {
       _controller.text = widget.initialQuery!;
@@ -55,6 +62,8 @@ class _ConcordanceScreenState extends State<ConcordanceScreen>
   Future<void> _search() async {
     final query = _controller.text.trim();
     if (query.isEmpty) return;
+    final requestId = ++_requestId;
+    final strongSearch = _isStrongTab;
     setState(() {
       _query = query;
       _errorMessage = null;
@@ -62,23 +71,23 @@ class _ConcordanceScreenState extends State<ConcordanceScreen>
     });
 
     try {
-      if (_isStrongTab) {
+      if (strongSearch) {
         final results = await StrongService.search(query);
-        if (!mounted) return;
+        if (!mounted || requestId != _requestId) return;
         setState(() {
           _strongResults = results;
           _isLoading = false;
         });
       } else {
         final results = await SearchService.searchExactVerses(query);
-        if (!mounted) return;
+        if (!mounted || requestId != _requestId) return;
         setState(() {
           _concordanceResults = results;
           _isLoading = false;
         });
       }
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || requestId != _requestId) return;
       setState(() {
         _errorMessage = 'La recherche est momentanément indisponible.';
         _isLoading = false;

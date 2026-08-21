@@ -22,28 +22,35 @@ class _ResumeReadingCardState extends State<ResumeReadingCard> {
   }
 
   Future<void> _loadLastPosition() async {
-    final position = await DatabaseService.getLastReadingPosition();
-    if (position != null) {
-      final int bookId = position['book_id'];
+    try {
+      final position = await DatabaseService.getLastReadingPosition();
+      if (position != null) {
+        final int bookId = position['book_id'];
 
-      // Récupérer le nom du livre correspondant dans la table books
-      final db = await DatabaseService.database;
-      final bookResult = await db.query(
-        'books',
-        where: 'id = ?',
-        whereArgs: [bookId],
-        limit: 1,
-      );
+        // Récupérer le nom du livre correspondant dans la table books
+        final db = await DatabaseService.database;
+        final bookResult = await db.query(
+          'books',
+          where: 'id = ?',
+          whereArgs: [bookId],
+          limit: 1,
+        );
 
-      if (bookResult.isNotEmpty) {
-        setState(() {
-          _lastPosition = position;
-          _bookName = bookResult.first['name'] as String;
-          _isLoading = false;
-        });
-        return;
+        if (bookResult.isNotEmpty) {
+          if (!mounted) return;
+          setState(() {
+            _lastPosition = position;
+            _bookName = bookResult.first['name'] as String;
+            _isLoading = false;
+          });
+          return;
+        }
       }
+    } on Object {
+      // Une carte secondaire ne doit jamais bloquer l'accueil si la base est
+      // temporairement indisponible pendant une migration ou une restauration.
     }
+    if (!mounted) return;
     setState(() {
       _isLoading = false;
     });

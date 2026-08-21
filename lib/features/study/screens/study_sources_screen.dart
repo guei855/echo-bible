@@ -32,14 +32,25 @@ class StudySourcesScreen extends StatelessWidget {
             _SourceCard(
               title: 'Bible thématique',
               source: "Orville J. Nave, Nave's Topical Bible — CCEL/CrossWire",
-              license: 'Domaine public',
-              url: 'https://ccel.org/ccel/n/nave/bible.html',
+              license:
+                  'Original : domaine public ; couche française ECHO BIBLE : CC BY-SA 4.0',
+              url:
+                  'https://crosswire.org/sword/modules/ModInfo.jsp?modName=Nave',
             ),
             _SourceCard(
               title: 'Dictionnaire biblique français',
-              source: 'Aucune ressource complète juridiquement validée',
-              license: 'Aucun contenu téléchargé ou fabriqué',
-              url: 'Voir docs/resources/dictionary_candidates.md',
+              source:
+                  'Dictionnaire de la Bible — F. Vigouroux / Wikisource / Gallica',
+              license:
+                  'Œuvre historique : domaine public ; transcription Wikisource : CC BY-SA 4.0',
+              url: 'https://fr.wikisource.org/wiki/Dictionnaire_de_la_Bible',
+            ),
+            _SourceCard(
+              title: 'Bibles françaises hors ligne',
+              source:
+                  'LSG, Ostervald, Darby et néo-Crampon : eBible.org ; Martin 1744 : GetBible / CrossWire',
+              license: 'Domaine public, sauf néo-Crampon Libre : CC BY-SA 4.0',
+              url: 'https://ebible.org/bible/',
             ),
           ],
         ),

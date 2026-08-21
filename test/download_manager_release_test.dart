@@ -38,7 +38,10 @@ void main() {
       );
       expect(card, findsOneWidget);
       expect(
-        find.descendant(of: card, matching: find.text('Télécharger')),
+        find.descendant(
+          of: card,
+          matching: find.widgetWithText(TextButton, 'Télécharger'),
+        ),
         findsOneWidget,
       );
     }

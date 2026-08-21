@@ -52,6 +52,7 @@ void main() {
     await tester.drag(
       find.byKey(const Key('study-tool-dictionary')),
       const Offset(-500, 0),
+      warnIfMissed: false,
     );
     await tester.pump();
     expect(find.text('Comparer'), findsOneWidget);

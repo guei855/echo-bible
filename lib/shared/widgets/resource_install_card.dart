@@ -53,10 +53,10 @@ class ResourceInstallCard extends StatelessWidget {
                     label: 'Statut',
                     value: switch (state) {
                       OfflineResourceState.installed => 'Installé',
-                      OfflineResourceState.notInstalled => 'Non installé',
+                      OfflineResourceState.notInstalled => 'Télécharger',
                       OfflineResourceState.updateAvailable =>
                         'Mise à jour disponible',
-                      OfflineResourceState.downloading => 'Téléchargement',
+                      OfflineResourceState.downloading => 'Téléchargement…',
                       OfflineResourceState.error => 'Erreur',
                       OfflineResourceState.licenseRequired =>
                         'Autorisation requise',
