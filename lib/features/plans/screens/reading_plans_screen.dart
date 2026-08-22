@@ -52,7 +52,14 @@ class _ReadingPlansScreenState extends State<ReadingPlansScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
             children: [
-              const ReadingReminderCard(),
+              ReadingReminderCard(
+                key: ValueKey('reminders-${data.today.planId ?? 0}'),
+                planId: data.today.planId ?? 0,
+                planTitle: data.today.title,
+                todayReading: data.today.readings
+                    .map((reading) => '${reading.bookName} ${reading.chapter}')
+                    .join(' · '),
+              ),
               const SizedBox(height: 20),
               Text(
                 'Plan par défaut',

@@ -1,6 +1,7 @@
 import 'package:echo_bible/core/resources/language_settings_service.dart';
 import 'package:echo_bible/core/resources/resource_descriptor.dart';
 import 'package:echo_bible/core/services/database_service.dart';
+import 'package:echo_bible/core/bible/bible_book_display_names.dart';
 import 'package:echo_bible/features/bible/repositories/bible_version_repository.dart';
 import 'package:echo_bible/features/study/models/nave_topic.dart';
 import 'package:echo_bible/features/study/services/nave_database_service.dart';
@@ -233,7 +234,10 @@ class NaveRepository {
         subtopicEnglish: english,
         translationStatus: translated?.status,
         bookId: bookId,
-        bookName: book?.name ?? fallbackBook['name']! as String,
+        bookName: BibleBookDisplayNames.french(
+          bookId,
+          fallback: book?.name ?? fallbackBook['name'] as String?,
+        ),
         chaptersCount:
             book?.chaptersCount ?? fallbackBook['chapters_count']! as int,
         chapter: chapter,

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:echo_bible/core/bible/bible_book_display_names.dart';
+
 enum StudyDocumentType {
   free('free', 'Étude libre'),
   bibleStudy('bible_study', 'Étude biblique'),
@@ -78,9 +80,9 @@ class StudyBlock {
         StudyBlockType.divider => '────────',
         StudyBlockType.verse ||
         StudyBlockType.verseRange =>
-          '${payload['reference'] ?? ''}\n'
+          '${displayReference(payload)}\n'
               '${payload['text'] ?? ''}',
-        StudyBlockType.verseLink => payload['reference'] as String? ?? '',
+        StudyBlockType.verseLink => displayReference(payload),
         StudyBlockType.strong => payload['displayMode'] == 'link'
             ? payload['code'] as String? ?? ''
             : '${payload['code'] ?? ''} '
@@ -96,7 +98,7 @@ class StudyBlock {
             return '${value['label']}: ${value['text']}';
           }).join('\n'),
         StudyBlockType.nave => '${payload['title'] ?? ''}\n'
-            "Bible thématique Nave${(payload['references'] as List<Object?>? ?? const []).isEmpty ? '' : '\n${(payload['references'] as List<Object?>).join('\n')}'}",
+            "Bible thématique Nave${_naveReferences(payload).isEmpty ? '' : '\n${_naveReferences(payload).join('\n')}'}",
         StudyBlockType.image => payload['caption'] as String? ?? 'Image',
       };
 
@@ -118,6 +120,21 @@ class StudyBlock {
 
   String encodePayload() => jsonEncode(payload);
 
+  static String displayReference(Map<String, Object?> payload) {
+    final bookId = payload['bookId'] as int?;
+    final chapter = payload['chapter'] as int?;
+    if (bookId == null || chapter == null) {
+      return payload['reference'] as String? ?? '';
+    }
+    return BibleBookDisplayNames.reference(
+      bookId,
+      chapter,
+      verse: payload['verseStart'] as int?,
+      endVerse: payload['verseEnd'] as int?,
+      fallback: payload['bookName'] as String?,
+    );
+  }
+
   static String _plainTextPayload(Map<String, Object?> payload) {
     final delta = payload['delta'];
     if (delta is! List) return payload['text'] as String? ?? '';
@@ -129,6 +146,15 @@ class StudyBlock {
     }
     return buffer.toString().replaceFirst(RegExp(r'\n$'), '').trimRight();
   }
+
+  static List<String> _naveReferences(Map<String, Object?> payload) => [
+        for (final value
+            in payload['references'] as List<Object?>? ?? const <Object?>[])
+          if (value is String)
+            value
+          else if (value is Map && value['reference'] is String)
+            displayReference(Map<String, Object?>.from(value)),
+      ];
 
   static Map<String, Object?> decodePayload(String? value) {
     if (value == null || value.trim().isEmpty) return const {};
@@ -175,8 +201,8 @@ class PersonalStudy {
       return primaryReference;
     }
     for (final block in blocks) {
-      final value = block.payload['reference'] as String?;
-      if (value != null && value.trim().isNotEmpty) return value;
+      final value = StudyBlock.displayReference(block.payload);
+      if (value.trim().isNotEmpty) return value;
     }
     return null;
   }

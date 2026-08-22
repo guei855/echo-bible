@@ -1,5 +1,7 @@
 import 'package:echo_bible/core/services/database_service.dart';
+import 'package:echo_bible/core/bible/bible_book_display_names.dart';
 import 'package:echo_bible/features/plans/models/reading_plan.dart';
+import 'package:echo_bible/features/plans/services/reading_reminder_service.dart';
 
 class ReadingPlanService {
   const ReadingPlanService._();
@@ -176,6 +178,7 @@ class ReadingPlanService {
         whereArgs: [planId],
       );
     });
+    await ReadingReminderService.repository.removePlan(planId);
   }
 
   static Future<List<PlanReading>> _personalReadings(
@@ -201,7 +204,10 @@ class ReadingPlanService {
     final verses = row['verses_count'] as int? ?? 25;
     return PlanReading(
       bookId: row['book_id'] as int,
-      bookName: row['book_name'] as String,
+      bookName: BibleBookDisplayNames.french(
+        row['book_id'] as int,
+        fallback: row['book_name'] as String?,
+      ),
       abbreviation: row['abbreviation'] as String? ?? '',
       chaptersCount: row['chapters_count'] as int,
       chapter: row['chapter_number'] as int,

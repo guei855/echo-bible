@@ -93,33 +93,33 @@ class VerseSelectionActionBar extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: _ContextActionButton(
                       key: const Key('compare-selected-verses'),
                       onPressed: onCompare,
                       icon: const Icon(Icons.compare_arrows_rounded),
-                      label: const Text('COMPARER'),
+                      label: 'Comparer',
+                      filled: false,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: FilledButton.icon(
+                    child: _ContextActionButton(
                       key: const Key('study-selected-verses'),
                       onPressed: onStudy,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                      ),
                       icon: const Icon(Icons.school_outlined),
-                      label: const Text('ÉTUDIER'),
+                      label: 'Étudier',
+                      filled: true,
                     ),
                   ),
                   if (onAddToStudy != null) ...[
                     const SizedBox(width: 8),
                     Expanded(
-                      child: OutlinedButton.icon(
+                      child: _ContextActionButton(
                         key: const Key('add-selected-verses-to-study'),
                         onPressed: onAddToStudy,
                         icon: const Icon(Icons.playlist_add),
-                        label: const Text('AJOUTER'),
+                        label: 'Ajouter',
+                        filled: false,
                       ),
                     ),
                   ],
@@ -130,6 +130,53 @@ class VerseSelectionActionBar extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ContextActionButton extends StatelessWidget {
+  const _ContextActionButton({
+    super.key,
+    required this.onPressed,
+    required this.icon,
+    required this.label,
+    required this.filled,
+  });
+
+  final VoidCallback? onPressed;
+  final Widget icon;
+  final String label;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 6),
+      ),
+      textStyle: const WidgetStatePropertyAll(TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      )),
+      backgroundColor:
+          filled ? const WidgetStatePropertyAll(AppColors.primary) : null,
+    );
+    final content = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconTheme.merge(data: const IconThemeData(size: 18), child: icon),
+        const SizedBox(width: 4),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(label, maxLines: 1, softWrap: false),
+          ),
+        ),
+      ],
+    );
+    return filled
+        ? FilledButton(onPressed: onPressed, style: style, child: content)
+        : OutlinedButton(onPressed: onPressed, style: style, child: content);
   }
 }
 

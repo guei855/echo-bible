@@ -58,7 +58,7 @@ void main() {
     await tester.tap(find.byKey(const Key('verse-number-1')));
     await tester.pump();
     expect(find.text('1 verset sélectionné'), findsOneWidget);
-    expect(find.text('ÉTUDIER'), findsOneWidget);
+    expect(find.text('Étudier'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('verse-number-2')));
     await tester.pump();
@@ -103,7 +103,7 @@ void main() {
     expect(find.byKey(const Key('verse-15')), findsOneWidget);
   });
 
-  testWidgets('le header étroit privilégie le nom long et déplace audio',
+  testWidgets('le header étroit affiche le nom canonique et déplace audio',
       (tester) async {
     tester.view.physicalSize = const Size(320, 700);
     tester.view.devicePixelRatio = 1;
@@ -135,7 +135,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Deuxième livre de Samuel 1'), findsOneWidget);
+    expect(find.text('2 Samuel 1'), findsOneWidget);
     expect(tester.takeException(), isNull);
     expect(
       find.descendant(

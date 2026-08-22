@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/services/database_service.dart';
+import '../../../core/bible/bible_book_display_names.dart';
 
 class ResumeReadingCard extends StatefulWidget {
   final Function(int bookId, int chapter, String bookName) onResume;
@@ -40,7 +41,10 @@ class _ResumeReadingCardState extends State<ResumeReadingCard> {
           if (!mounted) return;
           setState(() {
             _lastPosition = position;
-            _bookName = bookResult.first['name'] as String;
+            _bookName = BibleBookDisplayNames.french(
+              bookId,
+              fallback: bookResult.first['name'] as String?,
+            );
             _isLoading = false;
           });
           return;

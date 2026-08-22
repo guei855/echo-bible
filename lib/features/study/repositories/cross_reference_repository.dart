@@ -1,4 +1,5 @@
 import 'package:echo_bible/core/services/database_service.dart';
+import 'package:echo_bible/core/bible/bible_book_display_names.dart';
 import 'package:echo_bible/features/bible/repositories/bible_version_repository.dart';
 import 'package:echo_bible/features/study/models/cross_reference.dart';
 import 'package:echo_bible/features/study/services/cross_reference_database_service.dart';
@@ -83,7 +84,10 @@ class CrossReferenceRepository {
       final bookRow = books[bookId]!;
       result.add(CrossReference(
         bookId: bookId,
-        bookName: bookRow['name']! as String,
+        bookName: BibleBookDisplayNames.french(
+          bookId,
+          fallback: bookRow['name'] as String?,
+        ),
         chaptersCount: bookRow['chapters_count']! as int,
         chapter: targetChapter,
         verseStart: verseStart,

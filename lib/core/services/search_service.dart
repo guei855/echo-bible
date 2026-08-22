@@ -1,4 +1,5 @@
 import 'package:echo_bible/core/services/database_service.dart';
+import 'package:echo_bible/core/bible/bible_book_display_names.dart';
 
 class SearchResultItem {
   final int bookId;
@@ -104,7 +105,10 @@ class SearchService {
   static SearchResultItem _fromRow(Map<String, Object?> row) =>
       SearchResultItem(
         bookId: row['book_id'] as int,
-        bookName: row['book_name'] as String,
+        bookName: BibleBookDisplayNames.french(
+          row['book_id'] as int,
+          fallback: row['book_name'] as String?,
+        ),
         chaptersCount: row['chapters_count'] as int,
         chapterNumber: row['chapter_number'] as int,
         verseNumber: row['verse_number'] as int,

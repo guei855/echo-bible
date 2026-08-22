@@ -1,3 +1,5 @@
+import 'package:echo_bible/core/bible/bible_book_display_names.dart';
+
 class BibleBook {
   final int id;
   final String name;
@@ -7,11 +9,11 @@ class BibleBook {
 
   BibleBook({
     required this.id,
-    required this.name,
+    required String name,
     required this.abbreviation,
     required this.testament,
     required this.chaptersCount,
-  });
+  }) : name = BibleBookDisplayNames.french(id, fallback: name);
 
   factory BibleBook.fromMap(Map<String, dynamic> map) {
     return BibleBook(

@@ -107,6 +107,23 @@ class StudySchema {
           )
         )
       ''');
+      await transaction.execute('''
+        CREATE TABLE IF NOT EXISTS reading_plan_reminders(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          plan_id INTEGER NOT NULL,
+          hour INTEGER NOT NULL CHECK(hour BETWEEN 0 AND 23),
+          minute INTEGER NOT NULL CHECK(minute BETWEEN 0 AND 59),
+          enabled INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          UNIQUE(plan_id, hour, minute)
+        )
+      ''');
+      await transaction.execute('''
+        CREATE TABLE IF NOT EXISTS reading_plan_reminder_settings(
+          plan_id INTEGER PRIMARY KEY,
+          enabled INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
       await transaction.execute(
         'CREATE INDEX IF NOT EXISTS idx_verse_translations_verse '
         'ON verse_translations(verse_id, version_id)',
@@ -130,6 +147,10 @@ class StudySchema {
       await transaction.execute(
         'CREATE INDEX IF NOT EXISTS idx_text_markings_passage '
         'ON text_markings(book_id, chapter, verse_number, version_id)',
+      );
+      await transaction.execute(
+        'CREATE INDEX IF NOT EXISTS idx_reading_plan_reminders_plan '
+        'ON reading_plan_reminders(plan_id, hour, minute)',
       );
       await transaction.execute(
         'CREATE INDEX IF NOT EXISTS idx_cross_references_verse '

@@ -38,7 +38,7 @@ void main() {
     expect(first.keyVerse!.chapter, 1);
     expect(first.keyVerse!.text, isNotEmpty);
     expect(first.theme, 'Dieu crée, ordonne et donne la vie.');
-    expect(last.readings.last.bookName, 'Apocalypse de Jean');
+    expect(last.readings.last.bookName, 'Apocalypse');
     expect(last.readings.last.chapter, 22);
   });
 }
